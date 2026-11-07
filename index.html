@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>記帳本</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 移除數字輸入框預設箭頭與捲軸視覺干擾 */
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] {
+            appearance: textfield;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-900 antialiased selection:bg-slate-800 selection:text-white">
+    <!-- 手機主容器 -->
+    <div id="app" class="max-w-md mx-auto min-h-screen bg-slate-50 border-x border-slate-200 pb-20 relative"></div>
+
+    <!-- 抽屜與彈窗掛載點 -->
+    <div id="modal-root"></div>
+
+    <!-- 唯一 JS 入口 -->
+    <script type="module" src="./main.js"></script>
+</body>
+</html>
