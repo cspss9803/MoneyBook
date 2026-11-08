@@ -1,16 +1,19 @@
 export const DB_NAME = 'MinimalLedgerDB';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 export const STORES = {
   ACCOUNTS: 'accounts',
   CATEGORIES: 'categories',
-  TRANSACTIONS: 'transactions'
+  TRANSACTIONS: 'transactions',
+  STOCK_TRADES: 'stockTrades',
+  STOCK_PRICES: 'stockPrices'
 };
 
 export const ACCOUNT_TYPES = [
   { id: 'cash', label: '現金' },
   { id: 'credit', label: '信用卡' },
-  { id: 'virtual', label: '銀行帳戶' }
+  { id: 'virtual', label: '銀行帳戶' },
+  { id: 'stock', label: '股票帳戶' }
 ];
 
 export const TRANSACTION_TYPES = [

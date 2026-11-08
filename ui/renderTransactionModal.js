@@ -57,11 +57,16 @@ export function renderTransactionModal(editingTx = null) {
 
   pushOverlay('tx-modal', closeModal);
 
+  function getNonStockAccounts() {
+    return store.accounts.filter((a) => a.type !== 'stock');
+  }
+
   function getAllowedFromAccounts() {
+    const baseList = getNonStockAccounts();
     if (formState.type === 'income' || formState.type === 'transfer') {
-      return store.accounts.filter((a) => a.type !== 'credit');
+      return baseList.filter((a) => a.type !== 'credit');
     }
-    return store.accounts;
+    return baseList;
   }
 
   function getAdvanceExpenseCandidates() {
@@ -88,15 +93,17 @@ export function renderTransactionModal(editingTx = null) {
 
   function ensureValidSelections() {
     const allowedFrom = getAllowedFromAccounts();
+    const nonStockList = getNonStockAccounts();
+
     if (!allowedFrom.some((a) => a.id === formState.accountId)) {
       formState.accountId = allowedFrom[0]?.id || '';
     }
 
     if (formState.type === 'transfer') {
       formState.categoryId = null;
-      if (!store.accounts.some((a) => a.id === formState.toAccountId) || formState.toAccountId === formState.accountId) {
-        const anotherAcc = store.accounts.find((a) => a.id !== formState.accountId);
-        formState.toAccountId = anotherAcc?.id || store.accounts[0]?.id || '';
+      if (!nonStockList.some((a) => a.id === formState.toAccountId) || formState.toAccountId === formState.accountId) {
+        const anotherAcc = nonStockList.find((a) => a.id !== formState.accountId);
+        formState.toAccountId = anotherAcc?.id || nonStockList[0]?.id || '';
       }
       return;
     }
@@ -199,7 +206,7 @@ export function renderTransactionModal(editingTx = null) {
               </div>
             </div>
 
-            <!-- 金額劃分 (支出代墊 / 收入分帳) -->
+            <!-- 金額劃分 -->
             ${
               !isTransfer && !isRepayment
                 ? `
@@ -534,11 +541,12 @@ export function renderTransactionModal(editingTx = null) {
 
     modalRoot.querySelector('#btn-pick-to-acc')?.addEventListener('click', () => {
       syncInputsToState();
+      const nonStockList = getNonStockAccounts();
       openSelectPicker({
         id: 'pick-to-acc',
         title: '選擇轉入帳戶',
         selectedValue: formState.toAccountId,
-        options: store.accounts.map((acc) => ({
+        options: nonStockList.map((acc) => ({
           value: acc.id,
           label: acc.name,
           subLabel: accountTypeMap.get(acc.type) || '',

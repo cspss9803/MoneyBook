@@ -4,18 +4,16 @@ const firstDayOfMonthStr = `${todayStr.slice(0, 8)}01`;
 
 export const store = {
   theme: localStorage.getItem('mb_theme') === 'dark' ? 'dark' : 'light',
-  currentTab: 'transactions', // 'transactions' | 'accounts' | 'stats' | 'settings'
+  currentTab: 'transactions',
   accounts: [],
   categories: [],
   transactions: [],
+  stockTrades: [],
+  stockPrices: [],
 
-  // 記錄目前開啟的選單與彈窗堆疊 (供手機返回鍵依序關閉)
   overlayStack: [],
+  settingsCategoryType: 'expense',
 
-  // 設定頁當前檢視的類別分頁
-  settingsCategoryType: 'expense', // 'expense' | 'income'
-
-  // 統計頁篩選狀態
   statsFilter: {
     type: 'expense',
     period: 'month',

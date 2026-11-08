@@ -1,17 +1,30 @@
 import { ACCOUNT_TYPES } from '../config/constants.js';
 import { store } from '../state/store.js';
 import { calculateAccountBalance } from '../domain/calculateAccountBalance.js';
+import { calculateStockPortfolio } from '../domain/calculateStockPortfolio.js';
 import { formatCurrency } from '../domain/formatCurrency.js';
 import { renderIcon } from './renderIcon.js';
 import { renderAccountModal } from './renderAccountModal.js';
+import { renderStockModal } from './renderStockModal.js';
 
 export function renderAccountView(container) {
-  const { accounts, transactions } = store;
+  const { accounts, transactions, stockTrades, stockPrices } = store;
+  const accountMap = new Map(accounts.map((a) => [a.id, a]));
 
   let totalAssets = 0;
   let totalLiabilities = 0;
 
   const accountsWithBalance = accounts.map((acc) => {
+    if (acc.type === 'stock') {
+      const portfolio = calculateStockPortfolio(acc.id, stockTrades, stockPrices);
+      totalAssets += portfolio.totalMarketValue;
+      return {
+        ...acc,
+        balance: portfolio.totalMarketValue,
+        portfolio
+      };
+    }
+
     const balance = calculateAccountBalance(acc, transactions);
     if (balance >= 0) {
       totalAssets += balance;
@@ -30,6 +43,31 @@ export function renderAccountView(container) {
     const groupTotal = list.reduce((sum, a) => sum + a.balance, 0);
     const rowsHtml = list
       .map((acc) => {
+        if (acc.type === 'stock') {
+          const bankName = accountMap.get(acc.settlementAccountId)?.name || '未綁定交割戶';
+          const pnl = acc.portfolio?.totalUnrealizedPnL || 0;
+          const pnlSign = pnl > 0 ? '+' : '';
+          const pnlColor = pnl > 0 ? 'text-emerald-600' : pnl < 0 ? 'text-rose-600' : 'text-slate-400';
+
+          return `
+            <div data-acc-id="${acc.id}" class="p-3 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 cursor-pointer">
+              <div class="flex items-center space-x-3 min-w-0">
+                <div class="w-9 h-9 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 shrink-0">
+                  ${renderIcon(acc.iconType, acc.iconData, 'w-5 h-5')}
+                </div>
+                <div class="min-w-0">
+                  <div class="text-sm font-medium text-slate-900 truncate">${acc.name}</div>
+                  <div class="text-xs text-slate-400 truncate">交割戶：${bankName} · 持有 ${acc.portfolio?.holdings.length || 0} 檔</div>
+                </div>
+              </div>
+              <div class="text-right shrink-0 ml-2">
+                <div class="text-sm font-semibold text-slate-900">${formatCurrency(acc.balance)}</div>
+                <div class="text-[11px] font-medium ${pnlColor}">損益 ${pnlSign}${formatCurrency(pnl)}</div>
+              </div>
+            </div>
+          `;
+        }
+
         const isCredit = acc.type === 'credit';
         const balColor = acc.balance < 0 ? 'text-rose-600' : 'text-slate-900';
         const subText = isCredit
@@ -77,7 +115,7 @@ export function renderAccountView(container) {
         </button>
       </div>
       <div class="bg-white border border-slate-200 rounded-md p-3">
-        <div class="text-xs text-slate-500 mb-1">淨資產</div>
+        <div class="text-xs text-slate-500 mb-1">淨資產（含股票最新市值）</div>
         <div class="text-xl font-bold text-slate-900 mb-3">${formatCurrency(netWorth)}</div>
         <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
           <div>
@@ -106,7 +144,12 @@ export function renderAccountView(container) {
   container.querySelectorAll('[data-acc-id]').forEach((row) => {
     row.addEventListener('click', () => {
       const target = store.accounts.find((a) => a.id === row.dataset.accId);
-      if (target) renderAccountModal(target);
+      if (!target) return;
+      if (target.type === 'stock') {
+        renderStockModal(target);
+      } else {
+        renderAccountModal(target);
+      }
     });
   });
 }

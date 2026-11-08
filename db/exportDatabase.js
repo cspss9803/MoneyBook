@@ -2,10 +2,12 @@ import { STORES } from '../config/constants.js';
 import { getAllRecords } from './getAllRecords.js';
 
 export async function exportDatabase() {
-  const [accounts, categories, transactions] = await Promise.all([
+  const [accounts, categories, transactions, stockTrades, stockPrices] = await Promise.all([
     getAllRecords(STORES.ACCOUNTS),
     getAllRecords(STORES.CATEGORIES),
-    getAllRecords(STORES.TRANSACTIONS)
+    getAllRecords(STORES.TRANSACTIONS),
+    getAllRecords(STORES.STOCK_TRADES),
+    getAllRecords(STORES.STOCK_PRICES)
   ]);
 
   const now = new Date();
@@ -13,9 +15,9 @@ export async function exportDatabase() {
   const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
 
   const payload = {
-    version: 1,
+    version: 2,
     exportedAt: now.toISOString(),
-    data: { accounts, categories, transactions }
+    data: { accounts, categories, transactions, stockTrades, stockPrices }
   };
 
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });

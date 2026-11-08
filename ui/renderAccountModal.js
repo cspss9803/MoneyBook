@@ -1,5 +1,6 @@
 import { STORES, ACCOUNT_TYPES } from '../config/constants.js';
 import { PRESET_ICONS } from '../config/presetIcons.js';
+import { store } from '../state/store.js';
 import { refreshData } from '../state/refreshData.js';
 import { addRecord } from '../db/addRecord.js';
 import { updateRecord } from '../db/updateRecord.js';
@@ -16,10 +17,16 @@ export function renderAccountModal(editingAccount = null) {
   if (!modalRoot) return;
 
   const isEdit = Boolean(editingAccount);
+  const bankAccounts = store.accounts.filter((a) => a.type === 'virtual');
+
   const formState = {
     name: editingAccount?.name || '',
     type: editingAccount?.type || ACCOUNT_TYPES[0].id,
-    initialBalance: editingAccount?.type === 'credit' ? 0 : (editingAccount?.initialBalance ?? 0),
+    initialBalance:
+      editingAccount?.type === 'credit' || editingAccount?.type === 'stock'
+        ? 0
+        : (editingAccount?.initialBalance ?? 0),
+    settlementAccountId: editingAccount?.settlementAccountId || bankAccounts[0]?.id || '',
     iconType: 'preset',
     iconData: editingAccount?.iconData && PRESET_ICONS[editingAccount.iconData] ? editingAccount.iconData : 'wallet'
   };
@@ -33,7 +40,10 @@ export function renderAccountModal(editingAccount = null) {
 
   function renderModalContent() {
     const isCredit = formState.type === 'credit';
+    const isStock = formState.type === 'stock';
+    const hideInitialBalance = isCredit || isStock;
     const currentTypeLabel = ACCOUNT_TYPES.find((t) => t.id === formState.type)?.label || '現金';
+    const selectedBank = bankAccounts.find((b) => b.id === formState.settlementAccountId);
 
     modalRoot.innerHTML = `
       <div id="acc-modal-backdrop" class="fixed inset-0 bg-slate-900/40 z-30 flex items-end justify-center">
@@ -48,10 +58,10 @@ export function renderAccountModal(editingAccount = null) {
           <form id="acc-form" class="space-y-3">
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">帳戶名稱</label>
-              <input id="acc-name" type="text" required placeholder="例如：台新銀行、玉山信用卡" value="${formState.name}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-none focus:border-slate-900" />
+              <input id="acc-name" type="text" required placeholder="例如：台新銀行、富邦證券" value="${formState.name}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-none focus:border-slate-900" />
             </div>
 
-            <div class="grid ${isCredit ? 'grid-cols-1' : 'grid-cols-2'} gap-3">
+            <div class="grid ${hideInitialBalance ? 'grid-cols-1' : 'grid-cols-2'} gap-3">
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1">帳戶類型</label>
                 <button id="btn-pick-acc-type" type="button" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm text-slate-900 font-medium flex items-center justify-between active:bg-slate-50">
@@ -60,7 +70,7 @@ export function renderAccountModal(editingAccount = null) {
                 </button>
               </div>
               ${
-                !isCredit
+                !hideInitialBalance
                   ? `
                 <div>
                   <label class="block text-xs font-medium text-slate-600 mb-1">初始資金 (整數元)</label>
@@ -74,6 +84,23 @@ export function renderAccountModal(editingAccount = null) {
             ${
               isCredit
                 ? '<div class="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md p-2.5">信用卡無初始金額，僅能紀錄「支出」消費，並由其他帳戶透過「轉移」轉入此卡進行還款。</div>'
+                : ''
+            }
+
+            ${
+              isStock
+                ? `
+              <div class="p-3 bg-slate-50 border border-slate-200 rounded-md space-y-2">
+                <label class="block text-xs font-semibold text-slate-800">綁定交割銀行帳戶 (必選)</label>
+                <button id="btn-pick-settlement-bank" type="button" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm text-slate-900 font-medium flex items-center justify-between active:bg-slate-50">
+                  <span class="truncate">${selectedBank ? selectedBank.name : '請先建立一個「銀行帳戶」'}</span>
+                  <svg class="w-4 h-4 text-slate-400 shrink-0 ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="text-[11px] text-slate-500 leading-relaxed">
+                  買賣股票時，系統會自動在買賣日往後 2 個交易日（T+2）於此交割銀行帳戶新增預記的股款、手續費與證交稅紀錄。
+                </div>
+              </div>
+            `
                 : ''
             }
 
@@ -96,6 +123,8 @@ export function renderAccountModal(editingAccount = null) {
                   .join('')}
               </div>
             </div>
+
+            <div id="acc-error" class="text-xs text-rose-600 hidden"></div>
 
             <div class="pt-3 flex items-center space-x-2">
               ${
@@ -144,10 +173,32 @@ export function renderAccountModal(editingAccount = null) {
           formState.type = val;
           if (formState.type === 'credit') {
             formState.initialBalance = 0;
-            if (!isEdit && formState.iconData === 'wallet') {
-              formState.iconData = 'creditCard';
+            if (!isEdit && formState.iconData === 'wallet') formState.iconData = 'creditCard';
+          } else if (formState.type === 'stock') {
+            formState.initialBalance = 0;
+            if (!isEdit && formState.iconData === 'wallet') formState.iconData = 'trendingUp';
+            if (!formState.settlementAccountId && bankAccounts[0]) {
+              formState.settlementAccountId = bankAccounts[0].id;
             }
           }
+          renderModalContent();
+        }
+      });
+    });
+
+    modalRoot.querySelector('#btn-pick-settlement-bank')?.addEventListener('click', () => {
+      syncInputs();
+      openSelectPicker({
+        id: 'pick-settlement-bank',
+        title: '選擇交割銀行帳戶',
+        selectedValue: formState.settlementAccountId,
+        options: bankAccounts.map((b) => ({
+          value: b.id,
+          label: b.name,
+          icon: b.iconData
+        })),
+        onSelect: (val) => {
+          formState.settlementAccountId = val;
           renderModalContent();
         }
       });
@@ -183,12 +234,22 @@ export function renderAccountModal(editingAccount = null) {
       syncInputs();
       if (!formState.name) return;
 
+      const errorEl = modalRoot.querySelector('#acc-error');
       const isCredit = formState.type === 'credit';
+      const isStock = formState.type === 'stock';
+
+      if (isStock && !formState.settlementAccountId) {
+        errorEl.textContent = '請先建立一個「銀行帳戶」作為股票交割戶';
+        errorEl.classList.remove('hidden');
+        return;
+      }
+
       const record = {
         id: editingAccount?.id || `acc_${Date.now()}`,
         name: formState.name,
         type: formState.type,
-        initialBalance: isCredit ? 0 : parseIntegerAmount(formState.initialBalance, true),
+        initialBalance: isCredit || isStock ? 0 : parseIntegerAmount(formState.initialBalance, true),
+        settlementAccountId: isStock ? formState.settlementAccountId : null,
         iconType: 'preset',
         iconData: formState.iconData,
         createdAt: editingAccount?.createdAt || Date.now()
