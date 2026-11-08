@@ -104,12 +104,12 @@ export function renderAccountModal(editingAccount = null) {
                 <div>
                   <label class="block text-xs font-semibold text-slate-800 mb-1">券商手續費折數 (1 ~ 10 折)</label>
                   <input id="acc-fee-discount" type="number" step="0.01" min="0.1" max="10" required placeholder="例如：國泰填 2.8，無折扣填 10" value="${formState.feeDiscount}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm font-semibold focus:outline-none focus:border-slate-900" />
-                  <p class="text-[11px] text-slate-500 mt-1">台股法定手續費率為 0.1425%，系統會依此折數並以「無條件捨去法」自動計算手續費。</p>
+                  <p class="text-[11px] text-slate-500 mt-1">台股法定手續費率為 0.1425%，系統會依此折數並以「無條件捨去法（最低 1 元）」自動計算手續費。</p>
                 </div>
 
                 <label class="flex items-center space-x-2 pt-1 border-t border-slate-200 cursor-pointer">
                   <input id="acc-deduct-sell-fee" type="checkbox" ${formState.deductSellFeeInValue ? 'checked' : ''} class="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-0" />
-                  <span class="text-xs font-medium text-slate-700">計算現值與損益時，預先扣除賣出手續費（如國泰證券模式）</span>
+                  <span class="text-xs font-medium text-slate-700">計算現值與損益時，預先扣除賣出手續費與證交稅（逐筆計算、手續費最低 1 元）</span>
                 </label>
               </div>
             `
