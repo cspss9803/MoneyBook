@@ -1,10 +1,11 @@
+import { renderIcon } from './renderIcon.js';
 import { pushOverlay } from './pushOverlay.js';
 import { popOverlay } from './popOverlay.js';
 
 export function openDatePicker({
   id = 'date-picker',
   title = '選擇日期',
-  selectedDateStr = '', // 格式 YYYY-MM-DD
+  selectedDateStr = '',
   onSelect = null
 }) {
   const existing = document.getElementById('date-picker-layer');
@@ -21,6 +22,13 @@ export function openDatePicker({
   layer.id = 'date-picker-layer';
   layer.className = 'fixed inset-0 bg-slate-900/40 z-40 flex items-center justify-center p-4';
 
+  function closePicker() {
+    layer.remove();
+    popOverlay(id);
+  }
+
+  pushOverlay(id, closePicker);
+
   function renderCalendarContent() {
     const firstDayIndex = new Date(currentYear, currentMonth, 1).getDay();
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
@@ -33,7 +41,6 @@ export function openDatePicker({
 
     const daysHtml = [];
 
-    // 補齊上個月尾巴
     for (let i = firstDayIndex - 1; i >= 0; i--) {
       const dayNum = daysInPrevMonth - i;
       let prevM = currentMonth - 1;
@@ -48,7 +55,6 @@ export function openDatePicker({
       `);
     }
 
-    // 當月日期
     for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
       const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
       const isSelected = dateStr === selectedDateStr;
@@ -66,8 +72,7 @@ export function openDatePicker({
       `);
     }
 
-    // 補齊下個月開頭直到 35 或 42 格
-    const totalCells = weekdaysHtml.split('</div>').length - 1 + daysHtml.length;
+    const totalCells = daysHtml.length;
     const remainingCells = totalCells <= 35 ? 35 - totalCells : 42 - totalCells;
     for (let i = 1; i <= remainingCells; i++) {
       let nextM = currentMonth + 1;
@@ -86,7 +91,9 @@ export function openDatePicker({
       <div class="bg-white w-full max-w-xs rounded-xl border border-slate-200 p-4 shadow-sm">
         <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
           <h3 class="text-sm font-bold text-slate-900">${title}</h3>
-          <button id="btn-close-date-picker" type="button" class="text-xs text-slate-500 px-2 py-1">關閉</button>
+          <button id="btn-close-date-picker" type="button" aria-label="關閉" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-md active:bg-slate-100">
+            ${renderIcon('preset', 'x', 'w-5 h-5')}
+          </button>
         </div>
 
         <!-- 年月切換列 -->
@@ -125,18 +132,7 @@ export function openDatePicker({
     bindPickerEvents();
   }
 
-  function closePicker() {
-    popOverlay(id);
-    layer.remove();
-  }
-
-  pushOverlay(id, closePicker);
-
   function bindPickerEvents() {
-    layer.addEventListener('click', (e) => {
-      if (e.target === layer) closePicker();
-    });
-
     layer.querySelector('#btn-close-date-picker')?.addEventListener('click', closePicker);
 
     layer.querySelector('#btn-prev-month')?.addEventListener('click', () => {
@@ -174,6 +170,10 @@ export function openDatePicker({
       });
     });
   }
+
+  layer.addEventListener('click', (e) => {
+    if (e.target === layer) closePicker();
+  });
 
   document.body.appendChild(layer);
   renderCalendarContent();

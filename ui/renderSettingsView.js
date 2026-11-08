@@ -6,20 +6,26 @@ import { importDatabase } from '../db/importDatabase.js';
 import { renderIcon } from './renderIcon.js';
 import { renderCategoryModal } from './renderCategoryModal.js';
 import { openConfirmModal } from './openConfirmModal.js';
+import { applyTheme } from './applyTheme.js';
 
 export function renderSettingsView(container) {
   const currentType = store.settingsCategoryType || 'expense';
+  const currentTheme = store.theme || 'light';
   const filteredCategories = store.categories.filter((c) => c.type === currentType);
 
   const categoryRowsHtml = filteredCategories
     .map((cat) => {
+      const isSys = Boolean(cat.isSystem || cat.id === 'cat_sys_repayment');
       return `
         <div data-cat-id="${cat.id}" class="p-3 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 cursor-pointer">
           <div class="flex items-center space-x-3">
             <div class="w-8 h-8 rounded flex items-center justify-center text-white" style="background-color: ${cat.color}">
               ${renderIcon(cat.iconType, cat.iconData, 'w-4 h-4')}
             </div>
-            <span class="text-sm font-medium text-slate-900">${cat.name}</span>
+            <div class="flex items-center space-x-2">
+              <span class="text-sm font-medium text-slate-900">${cat.name}</span>
+              ${isSys ? '<span class="text-[10px] px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-500 rounded">系統內建</span>' : ''}
+            </div>
           </div>
           <span class="text-slate-400 p-1">
             ${renderIcon('preset', 'pencil', 'w-4 h-4')}
@@ -33,6 +39,22 @@ export function renderSettingsView(container) {
     <header class="mb-4">
       <h1 class="text-lg font-bold text-slate-900">設定與管理</h1>
     </header>
+
+    <!-- 外觀主題切換區塊 -->
+    <section class="bg-white border border-slate-200 rounded-md p-3 mb-4 flex items-center justify-between">
+      <div>
+        <h2 class="text-sm font-bold text-slate-900">外觀主題</h2>
+        <p class="text-xs text-slate-500">切換淺色或深色護眼介面</p>
+      </div>
+      <div class="inline-flex bg-slate-200 p-0.5 rounded-md">
+        <button type="button" data-theme-btn="light" class="px-3 py-1 text-xs font-semibold rounded ${
+          currentTheme === 'light' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
+        }">淺色</button>
+        <button type="button" data-theme-btn="dark" class="px-3 py-1 text-xs font-semibold rounded ${
+          currentTheme === 'dark' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
+        }">深色</button>
+      </div>
+    </section>
 
     <!-- 類別管理區塊 -->
     <section class="bg-white border border-slate-200 rounded-md overflow-hidden mb-4">
@@ -73,6 +95,13 @@ export function renderSettingsView(container) {
       <div id="backup-msg" class="text-xs text-slate-600 hidden"></div>
     </section>
   `;
+
+  container.querySelectorAll('[data-theme-btn]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      applyTheme(btn.dataset.themeBtn);
+      setState({ theme: btn.dataset.themeBtn });
+    });
+  });
 
   container.querySelectorAll('[data-cat-tab]').forEach((btn) => {
     btn.addEventListener('click', () => {

@@ -3,6 +3,7 @@ import { store } from '../state/store.js';
 import { setState } from '../state/setState.js';
 import { filterTransactionsByDate } from '../domain/filterTransactionsByDate.js';
 import { aggregateStatsByCategory } from '../domain/aggregateStatsByCategory.js';
+import { calculateReceivables } from '../domain/calculateReceivables.js';
 import { formatCurrency } from '../domain/formatCurrency.js';
 import { renderIcon } from './renderIcon.js';
 import { drawStatsChart } from './drawStatsChart.js';
@@ -10,7 +11,17 @@ import { openDatePicker } from './openDatePicker.js';
 
 export function renderStatsView(container) {
   const { statsFilter, transactions, categories } = store;
-  const availableCategories = categories.filter((c) => c.type === statsFilter.type);
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  // 計算全域代墊折抵與溢出還款資訊
+  const receivablesInfo = calculateReceivables(transactions, todayStr);
+
+  // 還款類別預設不計入一般收入，僅在超額時自動產生「溢出還款」，故不顯示於一般收入篩選按鈕中
+  const availableCategories = categories.filter(
+    (c) => c.type === statsFilter.type && c.id !== 'cat_sys_repayment'
+  );
 
   const activeCategoryIds =
     statsFilter.selectedCategoryIds === null
@@ -18,10 +29,15 @@ export function renderStatsView(container) {
       : statsFilter.selectedCategoryIds;
 
   const dateFilteredTx = filterTransactionsByDate(transactions, statsFilter);
-  const { totalAmount, items } = aggregateStatsByCategory(dateFilteredTx, categories, {
-    ...statsFilter,
-    selectedCategoryIds: activeCategoryIds
-  });
+  const { totalAmount, items } = aggregateStatsByCategory(
+    dateFilteredTx,
+    categories,
+    {
+      ...statsFilter,
+      selectedCategoryIds: activeCategoryIds
+    },
+    receivablesInfo
+  );
 
   const periodTabsHtml = STATS_PERIODS.map((p) => {
     const active = statsFilter.period === p.id;
@@ -112,6 +128,12 @@ export function renderStatsView(container) {
             statsFilter.type === 'income' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
           }">收入</button>
         </div>
+      </div>
+
+      <!-- 應收帳款摘要列 -->
+      <div class="bg-white border border-slate-200 rounded-md px-3 py-2 flex items-center justify-between text-xs">
+        <span class="text-slate-600 font-medium">目前應收帳款（幫人代墊尚未收回）</span>
+        <span class="font-bold ${receivablesInfo.totalReceivable > 0 ? 'text-amber-700' : 'text-slate-400'}">${formatCurrency(receivablesInfo.totalReceivable)}</span>
       </div>
 
       <!-- 區間選擇列 -->

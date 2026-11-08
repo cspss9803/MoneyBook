@@ -31,7 +31,7 @@ export function openSelectPicker({
               : '';
 
             const subLabelHtml = opt.subLabel
-              ? `<span class="text-xs text-slate-400 ml-1.5">${opt.subLabel}</span>`
+              ? `<div class="text-xs text-slate-400 truncate mt-0.5">${opt.subLabel}</div>`
               : '';
 
             const checkHtml = isSelected
@@ -54,8 +54,8 @@ export function openSelectPicker({
               >
                 <div class="flex items-center space-x-3 min-w-0">
                   ${iconHtml}
-                  <div class="truncate text-sm">
-                    <span>${opt.label}</span>
+                  <div class="min-w-0">
+                    <div class="truncate text-sm">${opt.label}</div>
                     ${subLabelHtml}
                   </div>
                 </div>
@@ -69,7 +69,9 @@ export function openSelectPicker({
     <div class="bg-white w-full max-w-md rounded-t-xl border-t border-slate-200 p-4 max-h-[75vh] flex flex-col">
       <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-200 shrink-0">
         <h3 class="text-sm font-bold text-slate-900">${title}</h3>
-        <button id="btn-close-select-picker" type="button" class="text-xs text-slate-500 px-2 py-1">關閉</button>
+        <button id="btn-close-select-picker" type="button" aria-label="關閉" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-md active:bg-slate-100">
+          ${renderIcon('preset', 'x', 'w-5 h-5')}
+        </button>
       </div>
       <div class="space-y-2 overflow-y-auto pr-0.5">
         ${itemsHtml}
@@ -80,8 +82,8 @@ export function openSelectPicker({
   document.body.appendChild(layer);
 
   function closePicker() {
-    popOverlay(id);
     layer.remove();
+    popOverlay(id);
   }
 
   pushOverlay(id, closePicker);

@@ -3,6 +3,7 @@ const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, 
 const firstDayOfMonthStr = `${todayStr.slice(0, 8)}01`;
 
 export const store = {
+  theme: localStorage.getItem('mb_theme') === 'dark' ? 'dark' : 'light',
   currentTab: 'transactions', // 'transactions' | 'accounts' | 'stats' | 'settings'
   accounts: [],
   categories: [],

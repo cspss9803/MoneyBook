@@ -1,6 +1,8 @@
 import { initDB } from './db/initDB.js';
+import { store } from './state/store.js';
 import { refreshData } from './state/refreshData.js';
 import { initBackHandler } from './ui/initBackHandler.js';
+import { applyTheme } from './ui/applyTheme.js';
 
 function hideLoader() {
   const loader = document.getElementById('app-loader');
@@ -13,6 +15,7 @@ function hideLoader() {
 
 async function bootstrap() {
   try {
+    applyTheme(store.theme);
     initBackHandler();
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});

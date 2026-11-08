@@ -24,8 +24,8 @@ export function renderAccountModal(editingAccount = null) {
   };
 
   function closeModal() {
-    popOverlay('acc-modal');
     modalRoot.innerHTML = '';
+    popOverlay('acc-modal');
   }
 
   pushOverlay('acc-modal', closeModal);
@@ -39,7 +39,9 @@ export function renderAccountModal(editingAccount = null) {
         <div class="bg-white w-full max-w-md rounded-t-xl border-t border-slate-200 p-4 max-h-[90vh] overflow-y-auto">
           <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
             <h2 class="text-base font-bold text-slate-900">${isEdit ? '編輯帳戶' : '新增帳戶'}</h2>
-            <button id="btn-close-acc-modal" type="button" class="text-sm text-slate-500 px-2 py-1">關閉</button>
+            <button id="btn-close-acc-modal" type="button" aria-label="關閉" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-md active:bg-slate-100">
+              ${renderIcon('preset', 'x', 'w-5 h-5')}
+            </button>
           </div>
 
           <form id="acc-form" class="space-y-3">
@@ -79,6 +81,7 @@ export function renderAccountModal(editingAccount = null) {
               <label class="block text-xs font-medium text-slate-600 mb-1">帳戶圖案</label>
               <div class="grid grid-cols-5 gap-2 p-2 border border-slate-200 rounded-md bg-slate-50 max-h-40 overflow-y-auto">
                 ${Object.keys(PRESET_ICONS)
+                  .filter((k) => k !== 'x' && k !== 'pencil')
                   .map((key) => {
                     const selected = formState.iconData === key;
                     return `

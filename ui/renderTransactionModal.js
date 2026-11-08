@@ -5,6 +5,8 @@ import { addRecord } from '../db/addRecord.js';
 import { updateRecord } from '../db/updateRecord.js';
 import { deleteRecord } from '../db/deleteRecord.js';
 import { parseIntegerAmount } from '../domain/parseIntegerAmount.js';
+import { formatCurrency } from '../domain/formatCurrency.js';
+import { calculateReceivables } from '../domain/calculateReceivables.js';
 import { renderIcon } from './renderIcon.js';
 import { pushOverlay } from './pushOverlay.js';
 import { popOverlay } from './popOverlay.js';
@@ -15,15 +17,30 @@ export function renderTransactionModal(editingTx = null) {
   const modalRoot = document.getElementById('modal-root');
   if (!modalRoot) return;
 
-  const isEdit = Boolean(editingTx);
+  let isEdit = Boolean(editingTx);
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
   const accountTypeMap = new Map(ACCOUNT_TYPES.map((t) => [t.id, t.label]));
+  const categoryMap = new Map(store.categories.map((c) => [c.id, c]));
+
+  // 計算目前所有代墊紀錄的待收餘額 (若正在編輯某筆還款，先排除該筆還款自身金額以便正確顯示原欠款)
+  const txForReceivables = isEdit
+    ? store.transactions.filter((t) => t.id !== editingTx.id)
+    : store.transactions;
+  const { advanceMap } = calculateReceivables(txForReceivables, null);
+
+  const initTotal = editingTx?.amount || '';
+  const initOther = Math.round(Number(editingTx?.otherAmount) || 0);
+  const initMy = initTotal !== '' ? Math.max(0, Number(initTotal) - initOther) : '';
 
   const formState = {
     type: editingTx?.type || 'expense',
-    amount: editingTx?.amount || '',
+    amount: initTotal,
+    hasSplit: initOther >= 1,
+    myAmount: initMy,
+    otherAmount: initOther >= 1 ? initOther : '',
+    repayTargetId: editingTx?.repayTargetId || '',
     name: editingTx?.name || '',
     date: editingTx?.date || todayStr,
     accountId: editingTx?.accountId || '',
@@ -34,8 +51,8 @@ export function renderTransactionModal(editingTx = null) {
   };
 
   function closeModal() {
-    popOverlay('tx-modal');
     modalRoot.innerHTML = '';
+    popOverlay('tx-modal');
   }
 
   pushOverlay('tx-modal', closeModal);
@@ -45,6 +62,28 @@ export function renderTransactionModal(editingTx = null) {
       return store.accounts.filter((a) => a.type !== 'credit');
     }
     return store.accounts;
+  }
+
+  function getAdvanceExpenseCandidates() {
+    return store.transactions
+      .filter((tx) => tx.type === 'expense' && (tx.otherAmount || 0) >= 1)
+      .map((tx) => {
+        const info = advanceMap.get(tx.id);
+        const remaining = info ? info.remainingOwed : tx.otherAmount;
+        const repaid = info ? info.repaidAmount : 0;
+        const catName = categoryMap.get(tx.categoryId)?.name || '支出';
+        return {
+          tx,
+          title: tx.name || catName,
+          remaining,
+          repaid,
+          advanced: tx.otherAmount
+        };
+      })
+      .sort((a, b) => {
+        if ((b.remaining > 0) !== (a.remaining > 0)) return b.remaining > 0 ? 1 : -1;
+        return b.tx.date.localeCompare(a.tx.date);
+      });
   }
 
   function ensureValidSelections() {
@@ -65,6 +104,17 @@ export function renderTransactionModal(editingTx = null) {
     const matchingCats = store.categories.filter((c) => c.type === formState.type);
     if (!matchingCats.some((c) => c.id === formState.categoryId)) {
       formState.categoryId = matchingCats[0]?.id || '';
+    }
+
+    if (formState.type === 'income' && formState.categoryId === 'cat_sys_repayment') {
+      const candidates = getAdvanceExpenseCandidates();
+      if (!candidates.some((c) => c.tx.id === formState.repayTargetId)) {
+        const firstUnsettled = candidates.find((c) => c.remaining > 0) || candidates[0];
+        formState.repayTargetId = firstUnsettled?.tx.id || '';
+        if (!formState.amount && firstUnsettled?.remaining > 0) {
+          formState.amount = firstUnsettled.remaining;
+        }
+      }
     }
   }
 
@@ -95,16 +145,31 @@ export function renderTransactionModal(editingTx = null) {
 
   function renderModalContent() {
     const isTransfer = formState.type === 'transfer';
+    const isRepayment = formState.type === 'income' && formState.categoryId === 'cat_sys_repayment';
     const availableCategories = store.categories.filter((c) => c.type === formState.type);
     const fromAccountObj = store.accounts.find((a) => a.id === formState.accountId);
     const toAccountObj = store.accounts.find((a) => a.id === formState.toAccountId);
+
+    const candidates = isRepayment ? getAdvanceExpenseCandidates() : [];
+    const selectedTarget = candidates.find((c) => c.tx.id === formState.repayTargetId);
+
+    // 若目前正在檢視一筆「尚有欠款未收齊」的代墊支出，提供一鍵「記一筆還款」快捷鈕
+    const currentEditAdvanceInfo = isEdit && editingTx ? advanceMap.get(editingTx.id) : null;
+    const canQuickRepay = Boolean(
+      isEdit &&
+      formState.type === 'expense' &&
+      currentEditAdvanceInfo &&
+      currentEditAdvanceInfo.remainingOwed > 0
+    );
 
     modalRoot.innerHTML = `
       <div id="tx-modal-backdrop" class="fixed inset-0 bg-slate-900/40 z-30 flex items-end justify-center">
         <div class="bg-white w-full max-w-md rounded-t-xl border-t border-slate-200 p-4 max-h-[90vh] overflow-y-auto">
           <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
             <h2 class="text-base font-bold text-slate-900">${isEdit ? '編輯紀錄' : '新增紀錄'}</h2>
-            <button id="btn-close-tx-modal" type="button" class="text-sm text-slate-500 px-2 py-1">關閉</button>
+            <button id="btn-close-tx-modal" type="button" aria-label="關閉" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-md active:bg-slate-100">
+              ${renderIcon('preset', 'x', 'w-5 h-5')}
+            </button>
           </div>
 
           <!-- 支出 / 收入 / 轉移 切換器 -->
@@ -120,10 +185,10 @@ export function renderTransactionModal(editingTx = null) {
           </div>
 
           <form id="tx-form" class="space-y-3">
-            <!-- 金額與自訂日期按鈕 -->
+            <!-- 金額與日期 -->
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">金額 (整數元)</label>
+                <label class="block text-xs font-medium text-slate-600 mb-1">總金額 (整數元)</label>
                 <input id="tx-amount" type="number" step="1" min="1" required placeholder="0" value="${formState.amount}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm font-semibold focus:outline-none focus:border-slate-900" />
               </div>
               <div>
@@ -135,10 +200,73 @@ export function renderTransactionModal(editingTx = null) {
               </div>
             </div>
 
+            <!-- 金額劃分 (支出代墊 / 收入分帳) -->
+            ${
+              !isTransfer && !isRepayment
+                ? `
+              <div class="p-2.5 bg-slate-50 border border-slate-200 rounded-md space-y-2">
+                <label class="flex items-center justify-between cursor-pointer">
+                  <span class="text-xs font-medium text-slate-700">
+                    ${formState.type === 'expense' ? '此筆支出含幫人代墊（劃分個人與他人金額）' : '此筆收入含他人份額（劃分個人與他人金額）'}
+                  </span>
+                  <input id="tx-has-split" type="checkbox" ${formState.hasSplit ? 'checked' : ''} class="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-0" />
+                </label>
+                ${
+                  formState.hasSplit
+                    ? `
+                  <div class="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label class="block text-[11px] text-slate-500 mb-1">屬於自己 (元)</label>
+                      <input id="tx-my-amount" type="number" step="1" min="0" placeholder="0" value="${formState.myAmount}" class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold focus:outline-none focus:border-slate-900" />
+                    </div>
+                    <div>
+                      <label class="block text-[11px] text-slate-500 mb-1">${formState.type === 'expense' ? '幫人代墊 / 應收 (元)' : '他人份額 (元)'}</label>
+                      <input id="tx-other-amount" type="number" step="1" min="0" placeholder="0" value="${formState.otherAmount}" class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold text-amber-700 focus:outline-none focus:border-slate-900" />
+                    </div>
+                  </div>
+                  <div class="text-[11px] text-slate-500">
+                    ${
+                      formState.type === 'expense'
+                        ? '幫人代墊滿 1 元以上會標記為「應收帳款」，待收到「還款」後將自動從支出統計中扣除。'
+                        : '統計收入時僅會計算「屬於自己」的金額，但帳戶實際入帳仍以總金額計算。'
+                    }
+                  </div>
+                `
+                    : ''
+                }
+              </div>
+            `
+                : ''
+            }
+
+            <!-- 還款專屬：指定代墊紀錄選擇器 -->
+            ${
+              isRepayment
+                ? `
+              <div class="p-3 bg-slate-50 border border-slate-200 rounded-md space-y-2">
+                <label class="block text-xs font-semibold text-slate-800">指定要沖銷的代墊紀錄</label>
+                <button id="btn-pick-repay-target" type="button" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs text-slate-900 flex items-center justify-between active:bg-slate-50">
+                  <span class="truncate font-medium">
+                    ${
+                      selectedTarget
+                        ? `${selectedTarget.tx.date} · ${selectedTarget.title} (尚欠 ${formatCurrency(selectedTarget.remaining)})`
+                        : '請選擇一筆代墊紀錄'
+                    }
+                  </span>
+                  <svg class="w-4 h-4 text-slate-400 shrink-0 ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="text-[11px] text-slate-500 leading-relaxed">
+                  還款預設不計入一般收入，會直接扣抵該筆代墊在統計中的支出；若還款超過欠款，多出的金額會自動歸入「溢出還款」。
+                </div>
+              </div>
+            `
+                : ''
+            }
+
             <!-- 項目名稱 -->
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">項目名稱</label>
-              <input id="tx-name" type="text" placeholder="${isTransfer ? '例如：繳信用卡費、ATM 提款' : '選填，未填則顯示類別名稱'}" value="${formState.name}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-none focus:border-slate-900" />
+              <input id="tx-name" type="text" placeholder="${isTransfer ? '例如：繳信用卡費、ATM 提款' : isRepayment ? '例如：朋友還聚餐費' : '選填，未填則顯示類別名稱'}" value="${formState.name}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-none focus:border-slate-900" />
             </div>
 
             <!-- 自訂帳戶選擇器 -->
@@ -158,7 +286,7 @@ export function renderTransactionModal(editingTx = null) {
             `
                 : `
               <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">所屬帳戶${formState.type === 'income' ? ' (信用卡不可存入收入)' : ''}</label>
+                <label class="block text-xs font-medium text-slate-600 mb-1">${isRepayment ? '收款帳戶 (不含信用卡)' : `所屬帳戶${formState.type === 'income' ? ' (信用卡不可存入收入)' : ''}`}</label>
                 ${renderAccountSelectorButton('btn-pick-from-acc', fromAccountObj)}
               </div>
             `
@@ -200,7 +328,7 @@ export function renderTransactionModal(editingTx = null) {
 
             <!-- 排除統計開關 -->
             ${
-              !isTransfer
+              !isTransfer && !isRepayment
                 ? `
               <label class="flex items-center space-x-2 pt-1 cursor-pointer">
                 <input id="tx-exclude" type="checkbox" ${formState.excludeFromStats ? 'checked' : ''} class="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-0" />
@@ -212,8 +340,21 @@ export function renderTransactionModal(editingTx = null) {
 
             <div id="tx-error" class="text-xs text-rose-600 hidden"></div>
 
+            <!-- 若此筆為尚未收齊的代墊支出，提供一鍵新增還款按鈕 -->
+            ${
+              canQuickRepay
+                ? `
+              <div class="pt-1">
+                <button id="btn-quick-repay" type="button" class="w-full py-2 px-3 bg-teal-50 border border-teal-200 text-teal-800 text-xs font-semibold rounded-md active:bg-teal-100">
+                  ＋ 針對此筆代墊記一筆「還款」收入 (尚欠 ${formatCurrency(currentEditAdvanceInfo.remainingOwed)})
+                </button>
+              </div>
+            `
+                : ''
+            }
+
             <!-- 底部操作按鈕 -->
-            <div class="pt-3 flex items-center space-x-2">
+            <div class="pt-2 flex items-center space-x-2">
               ${
                 isEdit
                   ? `<button id="btn-delete-tx" type="button" class="px-4 py-2.5 border border-rose-200 text-rose-600 text-sm font-semibold rounded-md">刪除</button>`
@@ -233,11 +374,15 @@ export function renderTransactionModal(editingTx = null) {
 
   function syncInputsToState() {
     const amountEl = modalRoot.querySelector('#tx-amount');
+    const myAmtEl = modalRoot.querySelector('#tx-my-amount');
+    const otherAmtEl = modalRoot.querySelector('#tx-other-amount');
     const nameEl = modalRoot.querySelector('#tx-name');
     const noteEl = modalRoot.querySelector('#tx-note');
     const excludeEl = modalRoot.querySelector('#tx-exclude');
 
     if (amountEl) formState.amount = amountEl.value;
+    if (myAmtEl) formState.myAmount = myAmtEl.value;
+    if (otherAmtEl) formState.otherAmount = otherAmtEl.value;
     if (nameEl) formState.name = nameEl.value.trim();
     if (noteEl) formState.note = noteEl.value.trim();
     if (excludeEl) formState.excludeFromStats = excludeEl.checked;
@@ -249,7 +394,103 @@ export function renderTransactionModal(editingTx = null) {
       if (e.target === backdrop) closeModal();
     });
 
-    modalRoot.querySelector('#btn-close-tx-modal')?.addEventListener('click', closeModal);
+    modalRoot.querySelector('#btn-close-tx-modal')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeModal();
+    });
+
+    // 總金額與「屬於自己 / 他人代墊」雙向即時換算
+    const amountEl = modalRoot.querySelector('#tx-amount');
+    const myAmtEl = modalRoot.querySelector('#tx-my-amount');
+    const otherAmtEl = modalRoot.querySelector('#tx-other-amount');
+
+    amountEl?.addEventListener('input', () => {
+      formState.amount = amountEl.value;
+      if (formState.hasSplit && myAmtEl && otherAmtEl) {
+        const total = Math.max(0, Math.round(Number(amountEl.value) || 0));
+        const other = Math.min(total, Math.max(0, Math.round(Number(otherAmtEl.value) || 0)));
+        const my = Math.max(0, total - other);
+        formState.otherAmount = other;
+        formState.myAmount = my;
+        myAmtEl.value = my;
+        otherAmtEl.value = other;
+      }
+    });
+
+    myAmtEl?.addEventListener('input', () => {
+      const total = Math.max(0, Math.round(Number(amountEl?.value) || 0));
+      const my = Math.min(total, Math.max(0, Math.round(Number(myAmtEl.value) || 0)));
+      const other = Math.max(0, total - my);
+      formState.myAmount = my;
+      formState.otherAmount = other;
+      if (otherAmtEl) otherAmtEl.value = other;
+    });
+
+    otherAmtEl?.addEventListener('input', () => {
+      const total = Math.max(0, Math.round(Number(amountEl?.value) || 0));
+      const other = Math.min(total, Math.max(0, Math.round(Number(otherAmtEl.value) || 0)));
+      const my = Math.max(0, total - other);
+      formState.otherAmount = other;
+      formState.myAmount = my;
+      if (myAmtEl) myAmtEl.value = my;
+    });
+
+    modalRoot.querySelector('#tx-has-split')?.addEventListener('change', (e) => {
+      syncInputsToState();
+      formState.hasSplit = e.target.checked;
+      if (formState.hasSplit) {
+        const total = Math.max(0, Math.round(Number(formState.amount) || 0));
+        const other = Math.min(total, Math.max(0, Math.round(Number(formState.otherAmount) || 0)));
+        formState.otherAmount = other || '';
+        formState.myAmount = Math.max(0, total - other);
+      } else {
+        formState.otherAmount = '';
+        formState.myAmount = formState.amount;
+      }
+      renderModalContent();
+    });
+
+    modalRoot.querySelector('#btn-pick-repay-target')?.addEventListener('click', () => {
+      syncInputsToState();
+      const candidates = getAdvanceExpenseCandidates();
+      openSelectPicker({
+        id: 'pick-repay-target',
+        title: '選擇要還款的代墊紀錄',
+        selectedValue: formState.repayTargetId,
+        options: candidates.map((c) => ({
+          value: c.tx.id,
+          label: `${c.tx.date} · ${c.title}`,
+          subLabel: `代墊 ${formatCurrency(c.advanced)} · 已還 ${formatCurrency(c.repaid)} · 尚欠 ${formatCurrency(c.remaining)}`,
+          icon: categoryMap.get(c.tx.categoryId)?.iconData || 'tag'
+        })),
+        onSelect: (val) => {
+          formState.repayTargetId = val;
+          const targetObj = candidates.find((c) => c.tx.id === val);
+          if (targetObj && targetObj.remaining > 0) {
+            formState.amount = targetObj.remaining;
+          }
+          renderModalContent();
+        }
+      });
+    });
+
+    modalRoot.querySelector('#btn-quick-repay')?.addEventListener('click', () => {
+      if (!editingTx || !currentEditAdvanceInfo) return;
+      const targetTitle = editingTx.name || categoryMap.get(editingTx.categoryId)?.name || '代墊款';
+      editingTx = null;
+      isEdit = false;
+      formState.type = 'income';
+      formState.categoryId = 'cat_sys_repayment';
+      formState.repayTargetId = currentEditAdvanceInfo.txId;
+      formState.amount = currentEditAdvanceInfo.remainingOwed;
+      formState.name = `收回：${targetTitle}`;
+      formState.date = todayStr;
+      formState.hasSplit = false;
+      formState.otherAmount = '';
+      ensureValidSelections();
+      renderModalContent();
+    });
 
     modalRoot.querySelector('#btn-pick-date')?.addEventListener('click', () => {
       syncInputsToState();
@@ -278,12 +519,12 @@ export function renderTransactionModal(editingTx = null) {
       const allowedFrom = getAllowedFromAccounts();
       openSelectPicker({
         id: 'pick-from-acc',
-        title: formState.type === 'transfer' ? '選擇轉出帳戶' : '選擇所屬帳戶',
+        title: formState.type === 'transfer' ? '選擇轉出帳戶' : '選擇帳戶',
         selectedValue: formState.accountId,
         options: allowedFrom.map((acc) => ({
           value: acc.id,
           label: acc.name,
-          subLabel: `(${accountTypeMap.get(acc.type) || ''})`,
+          subLabel: accountTypeMap.get(acc.type) || '',
           icon: acc.iconData
         })),
         onSelect: (val) => {
@@ -302,7 +543,7 @@ export function renderTransactionModal(editingTx = null) {
         options: store.accounts.map((acc) => ({
           value: acc.id,
           label: acc.name,
-          subLabel: `(${accountTypeMap.get(acc.type) || ''})`,
+          subLabel: accountTypeMap.get(acc.type) || '',
           icon: acc.iconData
         })),
         onSelect: (val) => {
@@ -316,6 +557,7 @@ export function renderTransactionModal(editingTx = null) {
       btn.addEventListener('click', () => {
         syncInputsToState();
         formState.categoryId = btn.dataset.catId;
+        ensureValidSelections();
         renderModalContent();
       });
     });
@@ -332,6 +574,8 @@ export function renderTransactionModal(editingTx = null) {
       syncInputsToState();
 
       const errorEl = modalRoot.querySelector('#tx-error');
+      const isRepayment = formState.type === 'income' && formState.categoryId === 'cat_sys_repayment';
+
       if (!formState.accountId) {
         errorEl.textContent = '請先建立至少一個非信用卡的現金或虛擬帳戶';
         errorEl.classList.remove('hidden');
@@ -344,17 +588,35 @@ export function renderTransactionModal(editingTx = null) {
         return;
       }
 
+      if (isRepayment && !formState.repayTargetId) {
+        errorEl.textContent = '請先選擇要沖銷的代墊支出紀錄';
+        errorEl.classList.remove('hidden');
+        return;
+      }
+
+      const totalAmount = parseIntegerAmount(formState.amount, false);
+      let otherAmount = 0;
+      let myAmount = totalAmount;
+
+      if (formState.type !== 'transfer' && !isRepayment && formState.hasSplit) {
+        otherAmount = Math.min(totalAmount, Math.max(0, Math.round(Number(formState.otherAmount) || 0)));
+        myAmount = Math.max(0, totalAmount - otherAmount);
+      }
+
       const record = {
         id: editingTx?.id || `tx_${Date.now()}`,
         type: formState.type,
-        amount: parseIntegerAmount(formState.amount, false),
+        amount: totalAmount,
+        myAmount,
+        otherAmount,
+        repayTargetId: isRepayment ? formState.repayTargetId : null,
         name: formState.name,
         date: formState.date,
         accountId: formState.accountId,
         toAccountId: formState.type === 'transfer' ? formState.toAccountId : null,
         categoryId: formState.type === 'transfer' ? null : formState.categoryId,
         note: formState.note,
-        excludeFromStats: formState.type === 'transfer' ? true : Boolean(formState.excludeFromStats),
+        excludeFromStats: formState.type === 'transfer' ? true : isRepayment ? false : Boolean(formState.excludeFromStats),
         createdAt: editingTx?.createdAt || Date.now()
       };
 
