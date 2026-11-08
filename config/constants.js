@@ -10,7 +10,7 @@ export const STORES = {
 export const ACCOUNT_TYPES = [
   { id: 'cash', label: '現金' },
   { id: 'credit', label: '信用卡' },
-  { id: 'virtual', label: '虛擬帳戶' }
+  { id: 'virtual', label: '銀行帳戶' }
 ];
 
 export const TRANSACTION_TYPES = [

@@ -590,7 +590,7 @@ export function renderTransactionModal(editingTx = null) {
       const isRepayment = formState.type === 'income' && formState.categoryId === 'cat_sys_repayment';
 
       if (!formState.accountId) {
-        errorEl.textContent = '請先建立至少一個非信用卡的現金或虛擬帳戶';
+        errorEl.textContent = '請先建立至少一個非信用卡的現金或銀行帳戶';
         errorEl.classList.remove('hidden');
         return;
       }
