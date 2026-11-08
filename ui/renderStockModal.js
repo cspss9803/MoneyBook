@@ -179,37 +179,49 @@ export function renderStockModal(stockAccount) {
             </div>
           </div>
 
-          <!-- 費率與折數設定區塊 (修正對齊並提供三種證交稅率快捷鈕) -->
+          <!-- 費率與折數設定區塊 (買入時僅顯示滿版手續費折數；賣出時一併顯示證交稅率與快捷鈕) -->
           <div class="p-2.5 bg-slate-50 border border-slate-200 rounded-md space-y-2.5">
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid ${isBuy ? 'grid-cols-1' : 'grid-cols-2'} gap-3">
               <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">手續費折數 (無折扣 10)</label>
+                <label class="block text-xs font-medium text-slate-600 mb-1">手續費折數 (無折扣填 10)</label>
                 <input id="st-fee-discount" type="number" step="0.01" min="0.1" max="10" value="${uiState.feeDiscount}" class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold focus:outline-none focus:border-slate-900" />
               </div>
-              <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">證交稅率 (%)</label>
-                <input id="st-tax-rate" type="number" step="0.01" min="0" max="10" value="${uiState.taxRate}" class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold focus:outline-none focus:border-slate-900" />
-              </div>
+              ${
+                !isBuy
+                  ? `
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">證交稅率 (%)</label>
+                  <input id="st-tax-rate" type="number" step="0.01" min="0" max="10" value="${uiState.taxRate}" class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold focus:outline-none focus:border-slate-900" />
+                </div>
+              `
+                  : ''
+              }
             </div>
 
-            <!-- 證交稅率三等分快捷切換列 -->
-            <div class="grid grid-cols-3 gap-1.5">
-              <button type="button" data-tax-preset="0.3" class="py-1.5 px-2 text-xs font-semibold rounded border text-center ${
-                Number(uiState.taxRate) === 0.3
-                  ? 'bg-slate-900 text-white border-slate-900'
-                  : 'bg-white text-slate-600 border-slate-300'
-              }">一般 0.3%</button>
-              <button type="button" data-tax-preset="0.1" class="py-1.5 px-2 text-xs font-semibold rounded border text-center ${
-                Number(uiState.taxRate) === 0.1
-                  ? 'bg-slate-900 text-white border-slate-900'
-                  : 'bg-white text-slate-600 border-slate-300'
-              }">ETF 0.1%</button>
-              <button type="button" data-tax-preset="0" class="py-1.5 px-2 text-xs font-semibold rounded border text-center ${
-                Number(uiState.taxRate) === 0
-                  ? 'bg-slate-900 text-white border-slate-900'
-                  : 'bg-white text-slate-600 border-slate-300'
-              }">債券型ETF 0%</button>
-            </div>
+            ${
+              !isBuy
+                ? `
+              <!-- 證交稅率三等分快捷切換列 (僅賣出顯示) -->
+              <div class="grid grid-cols-3 gap-1.5">
+                <button type="button" data-tax-preset="0.3" class="py-1.5 px-2 text-xs font-semibold rounded border text-center ${
+                  Number(uiState.taxRate) === 0.3
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-300'
+                }">一般 0.3%</button>
+                <button type="button" data-tax-preset="0.1" class="py-1.5 px-2 text-xs font-semibold rounded border text-center ${
+                  Number(uiState.taxRate) === 0.1
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-300'
+                }">ETF 0.1%</button>
+                <button type="button" data-tax-preset="0" class="py-1.5 px-2 text-xs font-semibold rounded border text-center ${
+                  Number(uiState.taxRate) === 0
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-300'
+                }">債券型ETF 0%</button>
+              </div>
+            `
+                : ''
+            }
           </div>
 
           <!-- 手續費與證交稅結果 (單行標籤對齊) -->
@@ -458,6 +470,9 @@ export function renderStockModal(stockAccount) {
       btn.addEventListener('click', () => {
         syncFormInputs();
         uiState.tradeType = btn.dataset.tradeType;
+        if (uiState.symbol.length >= 4) {
+          uiState.taxRate = inferTaxRateFromSymbol(uiState.symbol);
+        }
         computeAutoFeeAndTax();
         renderContent();
       });
@@ -472,7 +487,6 @@ export function renderStockModal(stockAccount) {
       });
     });
 
-    // 輸入股票代號時自動識別 00937B (0%) / 0050 (0.1%) / 一般個股 (0.3%)
     modalRoot.querySelector('#st-symbol')?.addEventListener('input', (e) => {
       const sym = e.target.value.trim().toUpperCase();
       uiState.symbol = sym;
@@ -535,10 +549,12 @@ export function renderStockModal(stockAccount) {
       const fee = Math.max(0, Math.floor(Number(uiState.fee) || 0));
       const isBuy = uiState.tradeType === 'buy';
       const tax = isBuy ? 0 : Math.max(0, Math.floor(Number(uiState.tax) || 0));
-      const parsedTaxRate =
-        uiState.taxRate !== '' && !Number.isNaN(Number(uiState.taxRate))
-          ? Math.max(0, Number(uiState.taxRate))
-          : inferTaxRateFromSymbol(symbol);
+      // 買入時自動由股票代號推算該標的稅率(00937B -> 0%, 0050 -> 0.1%, 個股 -> 0.3%)，賣出時則採用介面設定值
+      const parsedTaxRate = isBuy
+        ? inferTaxRateFromSymbol(symbol)
+        : uiState.taxRate !== '' && !Number.isNaN(Number(uiState.taxRate))
+        ? Math.max(0, Number(uiState.taxRate))
+        : inferTaxRateFromSymbol(symbol);
 
       if (!freshAccount.settlementAccountId) {
         errorEl.textContent = '請先點擊上方鉛筆圖示綁定一個交割銀行帳戶';
@@ -622,7 +638,7 @@ export function renderStockModal(stockAccount) {
         });
       }
 
-      // 4. 新增股票交易紀錄（買入與賣出皆儲存該標的的 taxRate 供逐筆計算現值使用）
+      // 4. 新增股票交易紀錄
       await addRecord(STORES.STOCK_TRADES, {
         id: `st_${nowTs}`,
         accountId: freshAccount.id,
