@@ -1,5 +1,5 @@
 import { STORES } from '../config/constants.js';
-import { DEFAULT_CATEGORIES, SYSTEM_REPAYMENT_CATEGORY } from '../config/defaultCategories.js';
+import { DEFAULT_CATEGORIES, SYSTEM_CATEGORIES } from '../config/defaultCategories.js';
 import { getAllRecords } from './getAllRecords.js';
 import { addRecord } from './addRecord.js';
 import { updateRecord } from './updateRecord.js';
@@ -11,9 +11,30 @@ export async function initDB() {
       await addRecord(STORES.CATEGORIES, category);
     }
   } else {
-    const hasRepayCat = categories.some((c) => c.id === SYSTEM_REPAYMENT_CATEGORY.id);
-    if (!hasRepayCat) {
-      await updateRecord(STORES.CATEGORIES, SYSTEM_REPAYMENT_CATEGORY);
+    for (const sysCat of SYSTEM_CATEGORIES) {
+      const exists = categories.some((c) => c.id === sysCat.id);
+      if (!exists) {
+        await updateRecord(STORES.CATEGORIES, sysCat);
+      }
+    }
+  }
+
+  // 自動將先前已建立的股票交割明細升級為對應的系統專用類別
+  const transactions = await getAllRecords(STORES.TRANSACTIONS);
+  for (const tx of transactions) {
+    if (!tx.id.startsWith('tx_st_')) continue;
+    let targetCatId = tx.categoryId;
+
+    if (tx.id.endsWith('_1')) {
+      targetCatId = tx.type === 'expense' ? 'cat_sys_stock_buy' : 'cat_sys_stock_sell';
+    } else if (tx.id.endsWith('_2')) {
+      targetCatId = 'cat_sys_stock_fee';
+    } else if (tx.id.endsWith('_3')) {
+      targetCatId = 'cat_sys_stock_tax';
+    }
+
+    if (targetCatId !== tx.categoryId) {
+      await updateRecord(STORES.TRANSACTIONS, { ...tx, categoryId: targetCatId });
     }
   }
 

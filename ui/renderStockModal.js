@@ -22,9 +22,10 @@ export function renderStockModal(stockAccount) {
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
+  const latestAccInit = store.accounts.find((a) => a.id === stockAccount.id) || stockAccount;
   const defaultDiscount =
-    stockAccount.feeDiscount && stockAccount.feeDiscount > 0 && stockAccount.feeDiscount <= 10
-      ? stockAccount.feeDiscount
+    latestAccInit.feeDiscount && latestAccInit.feeDiscount > 0 && latestAccInit.feeDiscount <= 10
+      ? latestAccInit.feeDiscount
       : 10;
 
   const uiState = {
@@ -35,7 +36,7 @@ export function renderStockModal(stockAccount) {
     shares: '',
     price: '',
     feeDiscount: defaultDiscount,
-    taxRate: 0.3,       // 賣出證交稅率預設 0.3% (ETF 可切換為 0.1%)
+    taxRate: 0.3,
     fee: '',
     tax: 0,
     isSyncing: false
@@ -51,15 +52,15 @@ export function renderStockModal(stockAccount) {
   function computeAutoFeeAndTax() {
     const sharesNum = Math.max(0, Math.floor(Number(uiState.shares) || 0));
     const priceNum = Math.max(0, Number(uiState.price) || 0);
-    const principal = Math.floor(sharesNum * priceNum);
+    const principal = Math.floor(Math.round(sharesNum * priceNum * 100) / 100);
 
     const discNum = Number(uiState.feeDiscount);
     const validDisc = !Number.isNaN(discNum) && discNum > 0 && discNum <= 10 ? discNum : 10;
-    const autoFee = Math.floor(principal * 0.001425 * (validDisc / 10));
+    const autoFee = Math.floor(principal * 0.001425 * (validDisc / 10) + 1e-9);
 
     const rateNum = Math.max(0, Number(uiState.taxRate) || 0);
     const autoTax =
-      uiState.tradeType === 'sell' ? Math.floor(principal * (rateNum / 100)) : 0;
+      uiState.tradeType === 'sell' ? Math.floor(principal * (rateNum / 100) + 1e-9) : 0;
 
     uiState.fee = sharesNum > 0 && priceNum > 0 ? autoFee : '';
     uiState.tax = sharesNum > 0 && priceNum > 0 ? autoTax : 0;
@@ -105,7 +106,7 @@ export function renderStockModal(stockAccount) {
                       </div>
                       <div class="text-[11px] text-slate-400 mt-0.5">
                         總成本 ${formatCurrency(h.totalCost)}${
-                          portfolio.deductSellFee && h.estimatedSellFee > 0
+                          portfolio.deductSellFee
                             ? ` · 現值已預扣手續費 $${h.estimatedSellFee}`
                             : ''
                         }
@@ -130,7 +131,7 @@ export function renderStockModal(stockAccount) {
       const priceNum = Math.max(0, Number(uiState.price) || 0);
       const feeNum = Math.max(0, Math.floor(Number(uiState.fee) || 0));
       const taxNum = isBuy ? 0 : Math.max(0, Math.floor(Number(uiState.tax) || 0));
-      const rawPrincipal = Math.floor(sharesNum * priceNum);
+      const rawPrincipal = Math.floor(Math.round(sharesNum * priceNum * 100) / 100);
       const totalSettle = isBuy
         ? rawPrincipal + feeNum
         : Math.max(0, rawPrincipal - feeNum - taxNum);
@@ -205,7 +206,7 @@ export function renderStockModal(stockAccount) {
             }
           </div>
 
-          <!-- 無條件捨去後的手續費與證交稅結果 (可手動微調) -->
+          <!-- 無條件捨去後的手續費與證交稅結果 -->
           <div class="grid ${isBuy ? 'grid-cols-1' : 'grid-cols-2'} gap-3">
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">手續費 (0.1425% × 折數 無條件捨去)</label>
@@ -259,7 +260,7 @@ export function renderStockModal(stockAccount) {
             ${accountTrades
               .map((t) => {
                 const isBuy = t.type === 'buy';
-                const principal = Math.floor(t.shares * t.price);
+                const principal = Math.floor(Math.round(t.shares * t.price * 100) / 100);
                 return `
                   <div class="p-3 flex items-center justify-between">
                     <div class="min-w-0">
@@ -383,7 +384,7 @@ export function renderStockModal(stockAccount) {
     const priceNum = Math.max(0, Number(uiState.price) || 0);
     const feeNum = Math.max(0, Math.floor(Number(uiState.fee) || 0));
     const taxNum = isBuy ? 0 : Math.max(0, Math.floor(Number(uiState.tax) || 0));
-    const rawPrincipal = Math.floor(sharesNum * priceNum);
+    const rawPrincipal = Math.floor(Math.round(sharesNum * priceNum * 100) / 100);
     const totalSettle = isBuy
       ? rawPrincipal + feeNum
       : Math.max(0, rawPrincipal - feeNum - taxNum);
@@ -467,7 +468,6 @@ export function renderStockModal(stockAccount) {
       });
     });
 
-    // 當股數、股價、手續費折數、證交稅率變動時，自動以無條件捨去法重算手續費與證交稅，且不中斷輸入焦點
     ['#st-shares', '#st-price', '#st-fee-discount', '#st-tax-rate'].forEach((sel) => {
       modalRoot.querySelector(sel)?.addEventListener('input', () => {
         syncFormInputs();
@@ -480,7 +480,6 @@ export function renderStockModal(stockAccount) {
       });
     });
 
-    // 若使用者手動微調手續費或證交稅欄位，僅更新下方交割總額預覽
     ['#st-fee', '#st-tax'].forEach((sel) => {
       modalRoot.querySelector(sel)?.addEventListener('input', () => {
         syncFormInputs();
@@ -515,13 +514,13 @@ export function renderStockModal(stockAccount) {
         }
       }
 
-      const principal = Math.max(1, Math.floor(shares * price));
+      const principal = Math.max(1, Math.floor(Math.round(shares * price * 100) / 100));
       const settlementDate = addTradingDays(uiState.date, 2);
       const slashDate = uiState.date.replace(/-/g, '/');
       const nowTs = Date.now();
       const linkedTxIds = [];
 
-      // 1. 在交割戶新增 T+2 股款預記紀錄
+      // 1. 在交割戶新增 T+2 股款預記紀錄（使用專屬「股票交割」系統類別）
       const principalTxId = `tx_st_${nowTs}_1`;
       linkedTxIds.push(principalTxId);
       await addRecord(STORES.TRANSACTIONS, {
@@ -534,13 +533,13 @@ export function renderStockModal(stockAccount) {
         date: settlementDate,
         accountId: freshAccount.settlementAccountId,
         toAccountId: null,
-        categoryId: isBuy ? 'cat_exp_other' : 'cat_inc_invest',
+        categoryId: isBuy ? 'cat_sys_stock_buy' : 'cat_sys_stock_sell',
         note: `${isBuy ? '買入' : '賣出'}金額 ${formatCurrency(principal)} (成交價 ${price})`,
         excludeFromStats: true,
         createdAt: nowTs
       });
 
-      // 2. 若手續費 > 0，在交割戶新增手續費紀錄
+      // 2. 若手續費 > 0，在交割戶新增手續費紀錄（使用專屬「手續費」系統類別）
       if (fee > 0) {
         const feeTxId = `tx_st_${nowTs}_2`;
         linkedTxIds.push(feeTxId);
@@ -554,14 +553,14 @@ export function renderStockModal(stockAccount) {
           date: settlementDate,
           accountId: freshAccount.settlementAccountId,
           toAccountId: null,
-          categoryId: 'cat_exp_other',
+          categoryId: 'cat_sys_stock_fee',
           note: `${shares} 股手續費`,
           excludeFromStats: true,
           createdAt: nowTs + 1
         });
       }
 
-      // 3. 若證交稅 > 0，在交割戶新增證交稅紀錄
+      // 3. 若證交稅 > 0，在交割戶新增證交稅紀錄（使用專屬「證交稅」系統類別）
       if (tax > 0) {
         const taxTxId = `tx_st_${nowTs}_3`;
         linkedTxIds.push(taxTxId);
@@ -575,7 +574,7 @@ export function renderStockModal(stockAccount) {
           date: settlementDate,
           accountId: freshAccount.settlementAccountId,
           toAccountId: null,
-          categoryId: 'cat_exp_other',
+          categoryId: 'cat_sys_stock_tax',
           note: `${shares} 股證交稅 (稅率 ${uiState.taxRate}%)`,
           excludeFromStats: true,
           createdAt: nowTs + 2
@@ -610,7 +609,6 @@ export function renderStockModal(stockAccount) {
       await refreshData();
       renderContent();
 
-      // 背景自動查詢該檔股票最新收盤價
       syncDailyStockPrices(symbol).then(() => renderContent()).catch(() => {});
     });
 

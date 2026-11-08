@@ -1,16 +1,25 @@
-export function calculateStockPortfolio(accountOrId, stockTrades, stockPrices) {
+import { store } from '../state/store.js';
+
+export function calculateStockPortfolio(
+  accountOrId,
+  stockTrades = store.stockTrades,
+  stockPrices = store.stockPrices
+) {
   const accountId = typeof accountOrId === 'object' ? accountOrId?.id : accountOrId;
-  const rawDiscount = typeof accountOrId === 'object' ? Number(accountOrId?.feeDiscount) : 10;
-  const feeDiscount = rawDiscount > 0 && rawDiscount <= 10 ? rawDiscount : 10;
+  const accountObj =
+    store.accounts.find((a) => a.id === accountId) ||
+    (typeof accountOrId === 'object' ? accountOrId : null);
+
+  const rawDiscount = Number(accountObj?.feeDiscount);
+  const feeDiscount = !Number.isNaN(rawDiscount) && rawDiscount > 0 && rawDiscount <= 10 ? rawDiscount : 10;
   const discountMultiplier = feeDiscount / 10;
-  const deductSellFee =
-    typeof accountOrId === 'object' ? Boolean(accountOrId?.deductSellFeeInValue) : false;
+  const deductSellFee = Boolean(accountObj?.deductSellFeeInValue);
 
   const priceMap = new Map(stockPrices.map((p) => [p.symbol, p]));
   const trades = stockTrades
     .filter((t) => t.accountId === accountId)
     .sort((a, b) => {
-      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      if (a.date !== b.date) return a.date.localeCompare(a.date);
       return (a.createdAt || 0) - (b.createdAt || 0);
     });
 
@@ -29,7 +38,7 @@ export function calculateStockPortfolio(accountOrId, stockTrades, stockPrices) {
 
     const item = holdingsMap.get(sym);
     item.lastTradePrice = t.price;
-    const principal = Math.floor(t.shares * t.price);
+    const principal = Math.floor(Math.round(t.shares * t.price * 100) / 100);
     const fee = Math.floor(Number(t.fee) || 0);
 
     if (t.type === 'buy') {
@@ -38,7 +47,7 @@ export function calculateStockPortfolio(accountOrId, stockTrades, stockPrices) {
     } else if (t.type === 'sell') {
       if (item.shares > 0) {
         const ratio = Math.min(1, t.shares / item.shares);
-        item.totalCost = Math.max(0, Math.floor(item.totalCost * (1 - ratio)));
+        item.totalCost = Math.max(0, Math.floor(item.totalCost * (1 - ratio) + 1e-9));
         item.shares = Math.max(0, item.shares - t.shares);
       }
     }
@@ -55,9 +64,9 @@ export function calculateStockPortfolio(accountOrId, stockTrades, stockPrices) {
     const currentPrice = cachedPriceObj ? cachedPriceObj.price : item.lastTradePrice;
     const priceDate = cachedPriceObj ? cachedPriceObj.tradeDate : '成交價';
 
-    const rawMarketValue = Math.floor(item.shares * currentPrice);
+    const rawMarketValue = Math.floor(Math.round(item.shares * currentPrice * 100) / 100);
     const estimatedSellFee = deductSellFee
-      ? Math.floor(rawMarketValue * 0.001425 * discountMultiplier)
+      ? Math.floor(rawMarketValue * 0.001425 * discountMultiplier + 1e-9)
       : 0;
     const marketValue = Math.max(0, rawMarketValue - estimatedSellFee);
 
