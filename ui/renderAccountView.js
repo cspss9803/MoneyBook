@@ -16,7 +16,7 @@ export function renderAccountView(container) {
 
   const accountsWithBalance = accounts.map((acc) => {
     if (acc.type === 'stock') {
-      const portfolio = calculateStockPortfolio(acc.id, stockTrades, stockPrices);
+      const portfolio = calculateStockPortfolio(acc, stockTrades, stockPrices);
       totalAssets += portfolio.totalMarketValue;
       return {
         ...acc,
@@ -48,6 +48,10 @@ export function renderAccountView(container) {
           const pnl = acc.portfolio?.totalUnrealizedPnL || 0;
           const pnlSign = pnl > 0 ? '+' : '';
           const pnlColor = pnl > 0 ? 'text-emerald-600' : pnl < 0 ? 'text-rose-600' : 'text-slate-400';
+          const discountText =
+            acc.portfolio?.feeDiscount && acc.portfolio.feeDiscount < 10
+              ? `${acc.portfolio.feeDiscount}折`
+              : '無折扣';
 
           return `
             <div data-acc-id="${acc.id}" class="p-3 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 cursor-pointer">
@@ -57,7 +61,7 @@ export function renderAccountView(container) {
                 </div>
                 <div class="min-w-0">
                   <div class="text-sm font-medium text-slate-900 truncate">${acc.name}</div>
-                  <div class="text-xs text-slate-400 truncate">交割戶：${bankName} · 持有 ${acc.portfolio?.holdings.length || 0} 檔</div>
+                  <div class="text-xs text-slate-400 truncate">交割：${bankName} (${discountText}) · 持有 ${acc.portfolio?.holdings.length || 0} 檔</div>
                 </div>
               </div>
               <div class="text-right shrink-0 ml-2">
@@ -115,7 +119,7 @@ export function renderAccountView(container) {
         </button>
       </div>
       <div class="bg-white border border-slate-200 rounded-md p-3">
-        <div class="text-xs text-slate-500 mb-1">淨資產（含股票最新市值）</div>
+        <div class="text-xs text-slate-500 mb-1">淨資產（含股票最新現值）</div>
         <div class="text-xl font-bold text-slate-900 mb-3">${formatCurrency(netWorth)}</div>
         <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
           <div>

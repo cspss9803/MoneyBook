@@ -27,6 +27,8 @@ export function renderAccountModal(editingAccount = null) {
         ? 0
         : (editingAccount?.initialBalance ?? 0),
     settlementAccountId: editingAccount?.settlementAccountId || bankAccounts[0]?.id || '',
+    feeDiscount: editingAccount?.feeDiscount ?? 10,
+    deductSellFeeInValue: Boolean(editingAccount?.deductSellFeeInValue),
     iconType: 'preset',
     iconData: editingAccount?.iconData && PRESET_ICONS[editingAccount.iconData] ? editingAccount.iconData : 'wallet'
   };
@@ -58,7 +60,7 @@ export function renderAccountModal(editingAccount = null) {
           <form id="acc-form" class="space-y-3">
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">帳戶名稱</label>
-              <input id="acc-name" type="text" required placeholder="例如：台新銀行、富邦證券" value="${formState.name}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-none focus:border-slate-900" />
+              <input id="acc-name" type="text" required placeholder="例如：台新銀行、國泰證券" value="${formState.name}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-none focus:border-slate-900" />
             </div>
 
             <div class="grid ${hideInitialBalance ? 'grid-cols-1' : 'grid-cols-2'} gap-3">
@@ -90,15 +92,25 @@ export function renderAccountModal(editingAccount = null) {
             ${
               isStock
                 ? `
-              <div class="p-3 bg-slate-50 border border-slate-200 rounded-md space-y-2">
-                <label class="block text-xs font-semibold text-slate-800">綁定交割銀行帳戶 (必選)</label>
-                <button id="btn-pick-settlement-bank" type="button" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm text-slate-900 font-medium flex items-center justify-between active:bg-slate-50">
-                  <span class="truncate">${selectedBank ? selectedBank.name : '請先建立一個「銀行帳戶」'}</span>
-                  <svg class="w-4 h-4 text-slate-400 shrink-0 ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                </button>
-                <div class="text-[11px] text-slate-500 leading-relaxed">
-                  買賣股票時，系統會自動在買賣日往後 2 個交易日（T+2）於此交割銀行帳戶新增預記的股款、手續費與證交稅紀錄。
+              <div class="p-3 bg-slate-50 border border-slate-200 rounded-md space-y-3">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-800 mb-1">綁定交割銀行帳戶 (必選)</label>
+                  <button id="btn-pick-settlement-bank" type="button" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm text-slate-900 font-medium flex items-center justify-between active:bg-slate-50">
+                    <span class="truncate">${selectedBank ? selectedBank.name : '請先建立一個「銀行帳戶」'}</span>
+                    <svg class="w-4 h-4 text-slate-400 shrink-0 ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
                 </div>
+
+                <div>
+                  <label class="block text-xs font-semibold text-slate-800 mb-1">券商手續費折數 (1 ~ 10 折)</label>
+                  <input id="acc-fee-discount" type="number" step="0.01" min="0.1" max="10" required placeholder="例如：國泰填 2.8，無折扣填 10" value="${formState.feeDiscount}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm font-semibold focus:outline-none focus:border-slate-900" />
+                  <p class="text-[11px] text-slate-500 mt-1">台股法定手續費率為 0.1425%，系統會依此折數並以「無條件捨去法」自動計算手續費。</p>
+                </div>
+
+                <label class="flex items-center space-x-2 pt-1 border-t border-slate-200 cursor-pointer">
+                  <input id="acc-deduct-sell-fee" type="checkbox" ${formState.deductSellFeeInValue ? 'checked' : ''} class="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-0" />
+                  <span class="text-xs font-medium text-slate-700">計算現值與損益時，預先扣除賣出手續費（如國泰證券模式）</span>
+                </label>
               </div>
             `
                 : ''
@@ -147,8 +159,13 @@ export function renderAccountModal(editingAccount = null) {
   function syncInputs() {
     const nameEl = modalRoot.querySelector('#acc-name');
     const balEl = modalRoot.querySelector('#acc-balance');
+    const discEl = modalRoot.querySelector('#acc-fee-discount');
+    const deductEl = modalRoot.querySelector('#acc-deduct-sell-fee');
+
     if (nameEl) formState.name = nameEl.value.trim();
     if (balEl) formState.initialBalance = balEl.value;
+    if (discEl) formState.feeDiscount = discEl.value;
+    if (deductEl) formState.deductSellFeeInValue = deductEl.checked;
   }
 
   function bindEvents() {
@@ -244,12 +261,20 @@ export function renderAccountModal(editingAccount = null) {
         return;
       }
 
+      const parsedDiscount = Number(formState.feeDiscount);
+      const validDiscount =
+        !Number.isNaN(parsedDiscount) && parsedDiscount > 0 && parsedDiscount <= 10
+          ? Math.round(parsedDiscount * 100) / 100
+          : 10;
+
       const record = {
         id: editingAccount?.id || `acc_${Date.now()}`,
         name: formState.name,
         type: formState.type,
         initialBalance: isCredit || isStock ? 0 : parseIntegerAmount(formState.initialBalance, true),
         settlementAccountId: isStock ? formState.settlementAccountId : null,
+        feeDiscount: isStock ? validDiscount : null,
+        deductSellFeeInValue: isStock ? Boolean(formState.deductSellFeeInValue) : false,
         iconType: 'preset',
         iconData: formState.iconData,
         createdAt: editingAccount?.createdAt || Date.now()

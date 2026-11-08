@@ -2,6 +2,7 @@ import { STORES } from '../config/constants.js';
 import { store } from '../state/store.js';
 import { refreshData } from '../state/refreshData.js';
 import { addRecord } from '../db/addRecord.js';
+import { updateRecord } from '../db/updateRecord.js';
 import { deleteRecord } from '../db/deleteRecord.js';
 import { addTradingDays } from '../domain/addTradingDays.js';
 import { calculateStockPortfolio } from '../domain/calculateStockPortfolio.js';
@@ -21,6 +22,11 @@ export function renderStockModal(stockAccount) {
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
+  const defaultDiscount =
+    stockAccount.feeDiscount && stockAccount.feeDiscount > 0 && stockAccount.feeDiscount <= 10
+      ? stockAccount.feeDiscount
+      : 10;
+
   const uiState = {
     subTab: 'holdings', // 'holdings' | 'trade' | 'history'
     tradeType: 'buy',   // 'buy' | 'sell'
@@ -28,8 +34,10 @@ export function renderStockModal(stockAccount) {
     symbol: '',
     shares: '',
     price: '',
+    feeDiscount: defaultDiscount,
+    taxRate: 0.3,       // 賣出證交稅率預設 0.3% (ETF 可切換為 0.1%)
     fee: '',
-    tax: '',
+    tax: 0,
     isSyncing: false
   };
 
@@ -40,10 +48,27 @@ export function renderStockModal(stockAccount) {
 
   pushOverlay('stock-modal', closeModal);
 
+  function computeAutoFeeAndTax() {
+    const sharesNum = Math.max(0, Math.floor(Number(uiState.shares) || 0));
+    const priceNum = Math.max(0, Number(uiState.price) || 0);
+    const principal = Math.floor(sharesNum * priceNum);
+
+    const discNum = Number(uiState.feeDiscount);
+    const validDisc = !Number.isNaN(discNum) && discNum > 0 && discNum <= 10 ? discNum : 10;
+    const autoFee = Math.floor(principal * 0.001425 * (validDisc / 10));
+
+    const rateNum = Math.max(0, Number(uiState.taxRate) || 0);
+    const autoTax =
+      uiState.tradeType === 'sell' ? Math.floor(principal * (rateNum / 100)) : 0;
+
+    uiState.fee = sharesNum > 0 && priceNum > 0 ? autoFee : '';
+    uiState.tax = sharesNum > 0 && priceNum > 0 ? autoTax : 0;
+  }
+
   function renderContent() {
     const freshAccount = store.accounts.find((a) => a.id === stockAccount.id) || stockAccount;
     const settlementBank = store.accounts.find((a) => a.id === freshAccount.settlementAccountId);
-    const portfolio = calculateStockPortfolio(freshAccount.id, store.stockTrades, store.stockPrices);
+    const portfolio = calculateStockPortfolio(freshAccount, store.stockTrades, store.stockPrices);
     const accountTrades = store.stockTrades.filter((t) => t.accountId === freshAccount.id);
 
     const pnl = portfolio.totalUnrealizedPnL;
@@ -78,6 +103,13 @@ export function renderStockModal(stockAccount) {
                       <div class="text-xs text-slate-500 mt-1">
                         均價 ${h.avgCost} · 收盤 ${h.currentPrice} <span class="text-[10px] text-slate-400">(${h.priceDate})</span>
                       </div>
+                      <div class="text-[11px] text-slate-400 mt-0.5">
+                        總成本 ${formatCurrency(h.totalCost)}${
+                          portfolio.deductSellFee && h.estimatedSellFee > 0
+                            ? ` · 現值已預扣手續費 $${h.estimatedSellFee}`
+                            : ''
+                        }
+                      </div>
                     </div>
                     <div class="text-right">
                       <div class="text-sm font-bold text-slate-900">${formatCurrency(h.marketValue)}</div>
@@ -94,12 +126,14 @@ export function renderStockModal(stockAccount) {
       }
     } else if (uiState.subTab === 'trade') {
       const isBuy = uiState.tradeType === 'buy';
-      const sharesNum = Math.max(0, Math.round(Number(uiState.shares) || 0));
+      const sharesNum = Math.max(0, Math.floor(Number(uiState.shares) || 0));
       const priceNum = Math.max(0, Number(uiState.price) || 0);
-      const feeNum = Math.max(0, Math.round(Number(uiState.fee) || 0));
-      const taxNum = Math.max(0, Math.round(Number(uiState.tax) || 0));
-      const rawPrincipal = Math.round(sharesNum * priceNum);
-      const totalSettle = isBuy ? rawPrincipal + feeNum + taxNum : Math.max(0, rawPrincipal - feeNum - taxNum);
+      const feeNum = Math.max(0, Math.floor(Number(uiState.fee) || 0));
+      const taxNum = isBuy ? 0 : Math.max(0, Math.floor(Number(uiState.tax) || 0));
+      const rawPrincipal = Math.floor(sharesNum * priceNum);
+      const totalSettle = isBuy
+        ? rawPrincipal + feeNum
+        : Math.max(0, rawPrincipal - feeNum - taxNum);
       const tPlus2Date = addTradingDays(uiState.date, 2);
 
       bodyHtml = `
@@ -135,26 +169,65 @@ export function renderStockModal(stockAccount) {
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">成交股價 (可含小數)</label>
-              <input id="st-price" type="number" step="0.01" min="0.01" required placeholder="例如：185.5" value="${uiState.price}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm font-semibold focus:outline-none focus:border-slate-900" />
+              <input id="st-price" type="number" step="0.01" min="0.01" required placeholder="例如：14.47" value="${uiState.price}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm font-semibold focus:outline-none focus:border-slate-900" />
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
+          <!-- 費率與折數設定列 -->
+          <div class="grid ${isBuy ? 'grid-cols-1' : 'grid-cols-2'} gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-md">
             <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">手續費 (整數元)</label>
-              <input id="st-fee" type="number" step="1" min="0" placeholder="0" value="${uiState.fee}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-none focus:border-slate-900" />
+              <label class="block text-[11px] font-medium text-slate-600 mb-1">手續費折數 (無折扣填 10)</label>
+              <input id="st-fee-discount" type="number" step="0.01" min="0.1" max="10" value="${uiState.feeDiscount}" class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold focus:outline-none focus:border-slate-900" />
             </div>
+            ${
+              !isBuy
+                ? `
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="text-[11px] font-medium text-slate-600">證交稅率 (%)</label>
+                  <div class="space-x-1">
+                    <button type="button" data-tax-preset="0.3" class="px-1.5 py-0.5 text-[10px] rounded border ${
+                      Number(uiState.taxRate) === 0.3
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-600 border-slate-300'
+                    }">一般 0.3%</button>
+                    <button type="button" data-tax-preset="0.1" class="px-1.5 py-0.5 text-[10px] rounded border ${
+                      Number(uiState.taxRate) === 0.1
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-600 border-slate-300'
+                    }">ETF 0.1%</button>
+                  </div>
+                </div>
+                <input id="st-tax-rate" type="number" step="0.01" min="0" max="10" value="${uiState.taxRate}" class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold focus:outline-none focus:border-slate-900" />
+              </div>
+            `
+                : ''
+            }
+          </div>
+
+          <!-- 無條件捨去後的手續費與證交稅結果 (可手動微調) -->
+          <div class="grid ${isBuy ? 'grid-cols-1' : 'grid-cols-2'} gap-3">
             <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">證交稅 (整數元)</label>
-              <input id="st-tax" type="number" step="1" min="0" placeholder="0" value="${uiState.tax}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-none focus:border-slate-900" />
+              <label class="block text-xs font-medium text-slate-600 mb-1">手續費 (0.1425% × 折數 無條件捨去)</label>
+              <input id="st-fee" type="number" step="1" min="0" placeholder="0" value="${uiState.fee}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm font-semibold focus:outline-none focus:border-slate-900" />
             </div>
+            ${
+              !isBuy
+                ? `
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">證交稅 (無條件捨去)</label>
+                <input id="st-tax" type="number" step="1" min="0" placeholder="0" value="${uiState.tax}" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm font-semibold focus:outline-none focus:border-slate-900" />
+              </div>
+            `
+                : ''
+            }
           </div>
 
           <!-- T+2 交割試算預覽 -->
           <div class="p-3 bg-slate-50 border border-slate-200 rounded-md text-xs space-y-1">
             <div class="flex justify-between">
-              <span class="text-slate-500">成交股款 (四捨五入)：</span>
-              <span class="font-semibold text-slate-900">${formatCurrency(rawPrincipal)}</span>
+              <span class="text-slate-500">成交股款 (無條件捨去)：</span>
+              <span id="preview-principal" class="font-semibold text-slate-900">${formatCurrency(rawPrincipal)}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-slate-500">T+2 預計交割日：</span>
@@ -162,7 +235,7 @@ export function renderStockModal(stockAccount) {
             </div>
             <div class="flex justify-between pt-1 border-t border-slate-200">
               <span class="text-slate-700 font-medium">${isBuy ? '交割戶應扣總額：' : '交割戶應收淨額：'}</span>
-              <span class="font-bold ${isBuy ? 'text-rose-600' : 'text-emerald-600'}">${formatCurrency(totalSettle)}</span>
+              <span id="preview-settle-total" class="font-bold ${isBuy ? 'text-rose-600' : 'text-emerald-600'}">${formatCurrency(totalSettle)}</span>
             </div>
           </div>
 
@@ -186,7 +259,7 @@ export function renderStockModal(stockAccount) {
             ${accountTrades
               .map((t) => {
                 const isBuy = t.type === 'buy';
-                const principal = Math.round(t.shares * t.price);
+                const principal = Math.floor(t.shares * t.price);
                 return `
                   <div class="p-3 flex items-center justify-between">
                     <div class="min-w-0">
@@ -233,16 +306,19 @@ export function renderStockModal(stockAccount) {
           </div>
 
           <!-- 股票資產摘要卡 -->
-          <div class="bg-slate-50 border border-slate-200 rounded-md p-3 mb-3">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-xs text-slate-500">交割銀行：${settlementBank ? settlementBank.name : '未綁定'}</span>
+          <div class="bg-slate-50 border border-slate-200 rounded-md p-3 mb-3 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-slate-500">
+                交割：${settlementBank ? settlementBank.name : '未綁定'} · 手續費 ${portfolio.feeDiscount < 10 ? `${portfolio.feeDiscount} 折` : '無折扣'}
+              </span>
               <button id="btn-sync-prices" type="button" class="text-xs font-semibold text-slate-700 underline">
                 ${uiState.isSyncing ? '查價中...' : '手動更新收盤價'}
               </button>
             </div>
-            <div class="grid grid-cols-3 divide-x divide-slate-200 text-center pt-1">
+
+            <div class="grid grid-cols-3 divide-x divide-slate-200 text-center py-1">
               <div class="px-1">
-                <div class="text-[11px] text-slate-500 mb-0.5">目前總市值</div>
+                <div class="text-[11px] text-slate-500 mb-0.5">目前總現值</div>
                 <div class="text-xs font-bold text-slate-900">${formatCurrency(portfolio.totalMarketValue)}</div>
               </div>
               <div class="px-1">
@@ -254,6 +330,12 @@ export function renderStockModal(stockAccount) {
                 <div class="text-xs font-bold ${pnlColor}">${pnlSign}${formatCurrency(pnl)}</div>
               </div>
             </div>
+
+            <!-- 現值預扣賣出手續費切換開關 -->
+            <label class="flex items-center space-x-2 pt-2 border-t border-slate-200 cursor-pointer">
+              <input id="toggle-deduct-sell-fee" type="checkbox" ${freshAccount.deductSellFeeInValue ? 'checked' : ''} class="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-0" />
+              <span class="text-xs text-slate-600">現值與損益預先扣除賣出手續費（如國泰證券模式）</span>
+            </label>
           </div>
 
           <!-- 子分頁切換 -->
@@ -281,14 +363,35 @@ export function renderStockModal(stockAccount) {
     const symEl = modalRoot.querySelector('#st-symbol');
     const shEl = modalRoot.querySelector('#st-shares');
     const prEl = modalRoot.querySelector('#st-price');
+    const discEl = modalRoot.querySelector('#st-fee-discount');
+    const rateEl = modalRoot.querySelector('#st-tax-rate');
     const feeEl = modalRoot.querySelector('#st-fee');
     const taxEl = modalRoot.querySelector('#st-tax');
 
     if (symEl) uiState.symbol = symEl.value.trim().toUpperCase();
     if (shEl) uiState.shares = shEl.value;
     if (prEl) uiState.price = prEl.value;
+    if (discEl) uiState.feeDiscount = discEl.value;
+    if (rateEl) uiState.taxRate = rateEl.value;
     if (feeEl) uiState.fee = feeEl.value;
     if (taxEl) uiState.tax = taxEl.value;
+  }
+
+  function updateLivePreviewDOM() {
+    const isBuy = uiState.tradeType === 'buy';
+    const sharesNum = Math.max(0, Math.floor(Number(uiState.shares) || 0));
+    const priceNum = Math.max(0, Number(uiState.price) || 0);
+    const feeNum = Math.max(0, Math.floor(Number(uiState.fee) || 0));
+    const taxNum = isBuy ? 0 : Math.max(0, Math.floor(Number(uiState.tax) || 0));
+    const rawPrincipal = Math.floor(sharesNum * priceNum);
+    const totalSettle = isBuy
+      ? rawPrincipal + feeNum
+      : Math.max(0, rawPrincipal - feeNum - taxNum);
+
+    const principalEl = modalRoot.querySelector('#preview-principal');
+    const settleEl = modalRoot.querySelector('#preview-settle-total');
+    if (principalEl) principalEl.textContent = formatCurrency(rawPrincipal);
+    if (settleEl) settleEl.textContent = formatCurrency(totalSettle);
   }
 
   function bindEvents(freshAccount, portfolio) {
@@ -302,6 +405,16 @@ export function renderStockModal(stockAccount) {
     modalRoot.querySelector('#btn-edit-stock-acc')?.addEventListener('click', () => {
       closeModal();
       renderAccountModal(freshAccount);
+    });
+
+    modalRoot.querySelector('#toggle-deduct-sell-fee')?.addEventListener('change', async (e) => {
+      const updatedAcc = {
+        ...freshAccount,
+        deductSellFeeInValue: e.target.checked
+      };
+      await updateRecord(STORES.ACCOUNTS, updatedAcc);
+      await refreshData();
+      renderContent();
     });
 
     modalRoot.querySelector('#btn-sync-prices')?.addEventListener('click', async () => {
@@ -327,6 +440,16 @@ export function renderStockModal(stockAccount) {
       btn.addEventListener('click', () => {
         syncFormInputs();
         uiState.tradeType = btn.dataset.tradeType;
+        computeAutoFeeAndTax();
+        renderContent();
+      });
+    });
+
+    modalRoot.querySelectorAll('[data-tax-preset]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        syncFormInputs();
+        uiState.taxRate = Number(btn.dataset.taxPreset);
+        computeAutoFeeAndTax();
         renderContent();
       });
     });
@@ -344,10 +467,24 @@ export function renderStockModal(stockAccount) {
       });
     });
 
-    ['#st-shares', '#st-price', '#st-fee', '#st-tax'].forEach((sel) => {
-      modalRoot.querySelector(sel)?.addEventListener('change', () => {
+    // 當股數、股價、手續費折數、證交稅率變動時，自動以無條件捨去法重算手續費與證交稅，且不中斷輸入焦點
+    ['#st-shares', '#st-price', '#st-fee-discount', '#st-tax-rate'].forEach((sel) => {
+      modalRoot.querySelector(sel)?.addEventListener('input', () => {
         syncFormInputs();
-        renderContent();
+        computeAutoFeeAndTax();
+        const feeEl = modalRoot.querySelector('#st-fee');
+        const taxEl = modalRoot.querySelector('#st-tax');
+        if (feeEl) feeEl.value = uiState.fee;
+        if (taxEl) taxEl.value = uiState.tax;
+        updateLivePreviewDOM();
+      });
+    });
+
+    // 若使用者手動微調手續費或證交稅欄位，僅更新下方交割總額預覽
+    ['#st-fee', '#st-tax'].forEach((sel) => {
+      modalRoot.querySelector(sel)?.addEventListener('input', () => {
+        syncFormInputs();
+        updateLivePreviewDOM();
       });
     });
 
@@ -357,10 +494,11 @@ export function renderStockModal(stockAccount) {
 
       const errorEl = modalRoot.querySelector('#st-error');
       const symbol = uiState.symbol;
-      const shares = Math.max(1, Math.round(Number(uiState.shares) || 0));
+      const shares = Math.max(1, Math.floor(Number(uiState.shares) || 0));
       const price = Math.round((Number(uiState.price) || 0) * 100) / 100;
-      const fee = Math.max(0, Math.round(Number(uiState.fee) || 0));
-      const tax = Math.max(0, Math.round(Number(uiState.tax) || 0));
+      const fee = Math.max(0, Math.floor(Number(uiState.fee) || 0));
+      const isBuy = uiState.tradeType === 'buy';
+      const tax = isBuy ? 0 : Math.max(0, Math.floor(Number(uiState.tax) || 0));
 
       if (!freshAccount.settlementAccountId) {
         errorEl.textContent = '請先點擊上方鉛筆圖示綁定一個交割銀行帳戶';
@@ -368,7 +506,7 @@ export function renderStockModal(stockAccount) {
         return;
       }
 
-      if (uiState.tradeType === 'sell') {
+      if (!isBuy) {
         const held = portfolio.holdings.find((h) => h.symbol === symbol)?.shares || 0;
         if (shares > held) {
           errorEl.textContent = `庫存股數不足（目前持有 ${symbol} 共 ${held} 股）`;
@@ -377,8 +515,7 @@ export function renderStockModal(stockAccount) {
         }
       }
 
-      const isBuy = uiState.tradeType === 'buy';
-      const principal = Math.max(1, Math.round(shares * price));
+      const principal = Math.max(1, Math.floor(shares * price));
       const settlementDate = addTradingDays(uiState.date, 2);
       const slashDate = uiState.date.replace(/-/g, '/');
       const nowTs = Date.now();
@@ -434,12 +571,12 @@ export function renderStockModal(stockAccount) {
           amount: tax,
           myAmount: tax,
           otherAmount: 0,
-          name: `${slashDate} ${isBuy ? '買入' : '賣出'} ${symbol} 證交稅`,
+          name: `${slashDate} 賣出 ${symbol} 證交稅`,
           date: settlementDate,
           accountId: freshAccount.settlementAccountId,
           toAccountId: null,
           categoryId: 'cat_exp_other',
-          note: `${shares} 股證交稅`,
+          note: `${shares} 股證交稅 (稅率 ${uiState.taxRate}%)`,
           excludeFromStats: true,
           createdAt: nowTs + 2
         });
@@ -455,6 +592,8 @@ export function renderStockModal(stockAccount) {
         symbol,
         shares,
         price,
+        feeDiscount: Number(uiState.feeDiscount) || 10,
+        taxRate: isBuy ? 0 : Number(uiState.taxRate) || 0.3,
         fee,
         tax,
         linkedTxIds,
@@ -465,7 +604,7 @@ export function renderStockModal(stockAccount) {
       uiState.shares = '';
       uiState.price = '';
       uiState.fee = '';
-      uiState.tax = '';
+      uiState.tax = 0;
       uiState.subTab = 'holdings';
 
       await refreshData();

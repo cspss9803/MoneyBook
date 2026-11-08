@@ -1,4 +1,11 @@
-export function calculateStockPortfolio(accountId, stockTrades, stockPrices) {
+export function calculateStockPortfolio(accountOrId, stockTrades, stockPrices) {
+  const accountId = typeof accountOrId === 'object' ? accountOrId?.id : accountOrId;
+  const rawDiscount = typeof accountOrId === 'object' ? Number(accountOrId?.feeDiscount) : 10;
+  const feeDiscount = rawDiscount > 0 && rawDiscount <= 10 ? rawDiscount : 10;
+  const discountMultiplier = feeDiscount / 10;
+  const deductSellFee =
+    typeof accountOrId === 'object' ? Boolean(accountOrId?.deductSellFeeInValue) : false;
+
   const priceMap = new Map(stockPrices.map((p) => [p.symbol, p]));
   const trades = stockTrades
     .filter((t) => t.accountId === accountId)
@@ -22,8 +29,8 @@ export function calculateStockPortfolio(accountId, stockTrades, stockPrices) {
 
     const item = holdingsMap.get(sym);
     item.lastTradePrice = t.price;
-    const principal = Math.round(t.shares * t.price);
-    const fee = Math.round(Number(t.fee) || 0);
+    const principal = Math.floor(t.shares * t.price);
+    const fee = Math.floor(Number(t.fee) || 0);
 
     if (t.type === 'buy') {
       item.shares += t.shares;
@@ -31,7 +38,7 @@ export function calculateStockPortfolio(accountId, stockTrades, stockPrices) {
     } else if (t.type === 'sell') {
       if (item.shares > 0) {
         const ratio = Math.min(1, t.shares / item.shares);
-        item.totalCost = Math.max(0, Math.round(item.totalCost * (1 - ratio)));
+        item.totalCost = Math.max(0, Math.floor(item.totalCost * (1 - ratio)));
         item.shares = Math.max(0, item.shares - t.shares);
       }
     }
@@ -48,7 +55,12 @@ export function calculateStockPortfolio(accountId, stockTrades, stockPrices) {
     const currentPrice = cachedPriceObj ? cachedPriceObj.price : item.lastTradePrice;
     const priceDate = cachedPriceObj ? cachedPriceObj.tradeDate : '成交價';
 
-    const marketValue = Math.round(item.shares * currentPrice);
+    const rawMarketValue = Math.floor(item.shares * currentPrice);
+    const estimatedSellFee = deductSellFee
+      ? Math.floor(rawMarketValue * 0.001425 * discountMultiplier)
+      : 0;
+    const marketValue = Math.max(0, rawMarketValue - estimatedSellFee);
+
     const unrealizedPnL = marketValue - item.totalCost;
     const returnRate =
       item.totalCost > 0 ? Math.round((unrealizedPnL / item.totalCost) * 1000) / 10 : 0;
@@ -64,6 +76,8 @@ export function calculateStockPortfolio(accountId, stockTrades, stockPrices) {
       totalCost: item.totalCost,
       currentPrice,
       priceDate,
+      rawMarketValue,
+      estimatedSellFee,
       marketValue,
       unrealizedPnL,
       returnRate
@@ -79,6 +93,8 @@ export function calculateStockPortfolio(accountId, stockTrades, stockPrices) {
     totalMarketValue,
     totalCost,
     totalUnrealizedPnL,
-    totalReturnRate
+    totalReturnRate,
+    feeDiscount,
+    deductSellFee
   };
 }
