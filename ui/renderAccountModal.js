@@ -9,6 +9,7 @@ import { renderIcon } from './renderIcon.js';
 import { pushOverlay } from './pushOverlay.js';
 import { popOverlay } from './popOverlay.js';
 import { openSelectPicker } from './openSelectPicker.js';
+import { openConfirmModal } from './openConfirmModal.js';
 
 export function renderAccountModal(editingAccount = null) {
   const modalRoot = document.getElementById('modal-root');
@@ -99,7 +100,7 @@ export function renderAccountModal(editingAccount = null) {
             <div class="pt-3 flex items-center space-x-2">
               ${
                 isEdit
-                  ? `<button id="btn-delete-acc" type="button" class="px-4 py-2.5 border border-rose-200 text-rose-600 text-sm font-semibold rounded-md">刪除</button>`
+                  ? `<button id="btn-delete-acc" type="button" class="px-4 py-2.5 border border-rose-200 text-rose-600 text-sm font-semibold rounded-md active:bg-rose-50">刪除</button>`
                   : ''
               }
               <button type="submit" class="flex-1 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-md active:bg-slate-700">
@@ -160,11 +161,21 @@ export function renderAccountModal(editingAccount = null) {
       });
     });
 
-    modalRoot.querySelector('#btn-delete-acc')?.addEventListener('click', async () => {
+    modalRoot.querySelector('#btn-delete-acc')?.addEventListener('click', () => {
       if (!editingAccount) return;
-      await deleteRecord(STORES.ACCOUNTS, editingAccount.id);
-      closeModal();
-      await refreshData();
+      openConfirmModal({
+        id: 'delete-acc-confirm',
+        title: '刪除帳戶',
+        message: `確定要刪除「${editingAccount.name}」帳戶嗎？刪除後無法復原。`,
+        confirmText: '確定刪除',
+        cancelText: '取消',
+        isDanger: true,
+        onConfirm: async () => {
+          await deleteRecord(STORES.ACCOUNTS, editingAccount.id);
+          closeModal();
+          await refreshData();
+        }
+      });
     });
 
     modalRoot.querySelector('#acc-form')?.addEventListener('submit', async (e) => {

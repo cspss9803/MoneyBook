@@ -9,12 +9,19 @@ import { renderIcon } from './renderIcon.js';
 import { pushOverlay } from './pushOverlay.js';
 import { popOverlay } from './popOverlay.js';
 import { openSelectPicker } from './openSelectPicker.js';
+import { openConfirmModal } from './openConfirmModal.js';
 
 export function renderCategoryModal(editingCategory = null, defaultType = 'expense') {
+  // 系統專用類別（如「還款」）完全禁止被開啟編輯或刪除
+  if (editingCategory?.isSystem || editingCategory?.id === 'cat_sys_repayment') {
+    return;
+  }
+
   const modalRoot = document.getElementById('modal-root');
   if (!modalRoot) return;
 
   const isEdit = Boolean(editingCategory);
+
   const formState = {
     type: editingCategory?.type || defaultType,
     name: editingCategory?.name || '',
@@ -24,8 +31,8 @@ export function renderCategoryModal(editingCategory = null, defaultType = 'expen
   };
 
   function closeModal() {
-    popOverlay('cat-modal');
     modalRoot.innerHTML = '';
+    popOverlay('cat-modal');
   }
 
   pushOverlay('cat-modal', closeModal);
@@ -38,7 +45,9 @@ export function renderCategoryModal(editingCategory = null, defaultType = 'expen
         <div class="bg-white w-full max-w-md rounded-t-xl border-t border-slate-200 p-4 max-h-[90vh] overflow-y-auto">
           <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
             <h2 class="text-base font-bold text-slate-900">${isEdit ? '編輯類別' : '新增類別'}</h2>
-            <button id="btn-close-cat-modal" type="button" class="text-sm text-slate-500 px-2 py-1">關閉</button>
+            <button id="btn-close-cat-modal" type="button" aria-label="關閉" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-md active:bg-slate-100">
+              ${renderIcon('preset', 'x', 'w-5 h-5')}
+            </button>
           </div>
 
           <form id="cat-form" class="space-y-3">
@@ -87,6 +96,7 @@ export function renderCategoryModal(editingCategory = null, defaultType = 'expen
               <label class="block text-xs font-medium text-slate-600 mb-1">代表圖案</label>
               <div class="grid grid-cols-5 gap-2 p-2 border border-slate-200 rounded-md bg-slate-50 max-h-40 overflow-y-auto">
                 ${Object.keys(PRESET_ICONS)
+                  .filter((k) => k !== 'x' && k !== 'pencil')
                   .map((key) => {
                     const selected = formState.iconData === key;
                     return `
@@ -104,7 +114,7 @@ export function renderCategoryModal(editingCategory = null, defaultType = 'expen
             <div class="pt-3 flex items-center space-x-2">
               ${
                 isEdit
-                  ? `<button id="btn-delete-cat" type="button" class="px-4 py-2.5 border border-rose-200 text-rose-600 text-sm font-semibold rounded-md">刪除</button>`
+                  ? `<button id="btn-delete-cat" type="button" class="px-4 py-2.5 border border-rose-200 text-rose-600 text-sm font-semibold rounded-md active:bg-rose-50">刪除</button>`
                   : ''
               }
               <button type="submit" class="flex-1 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-md active:bg-slate-700">
@@ -130,7 +140,11 @@ export function renderCategoryModal(editingCategory = null, defaultType = 'expen
       if (e.target === backdrop) closeModal();
     });
 
-    modalRoot.querySelector('#btn-close-cat-modal')?.addEventListener('click', closeModal);
+    modalRoot.querySelector('#btn-close-cat-modal')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeModal();
+    });
 
     modalRoot.querySelector('#btn-pick-cat-type')?.addEventListener('click', () => {
       syncInputs();
@@ -165,11 +179,21 @@ export function renderCategoryModal(editingCategory = null, defaultType = 'expen
       });
     });
 
-    modalRoot.querySelector('#btn-delete-cat')?.addEventListener('click', async () => {
+    modalRoot.querySelector('#btn-delete-cat')?.addEventListener('click', () => {
       if (!editingCategory) return;
-      await deleteRecord(STORES.CATEGORIES, editingCategory.id);
-      closeModal();
-      await refreshData();
+      openConfirmModal({
+        id: 'delete-cat-confirm',
+        title: '刪除類別',
+        message: `確定要刪除「${editingCategory.name}」類別嗎？刪除後無法復原。`,
+        confirmText: '確定刪除',
+        cancelText: '取消',
+        isDanger: true,
+        onConfirm: async () => {
+          await deleteRecord(STORES.CATEGORIES, editingCategory.id);
+          closeModal();
+          await refreshData();
+        }
+      });
     });
 
     modalRoot.querySelector('#cat-form')?.addEventListener('submit', async (e) => {

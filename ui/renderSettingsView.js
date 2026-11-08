@@ -16,16 +16,30 @@ export function renderSettingsView(container) {
   const categoryRowsHtml = filteredCategories
     .map((cat) => {
       const isSys = Boolean(cat.isSystem || cat.id === 'cat_sys_repayment');
+
+      if (isSys) {
+        return `
+          <div class="p-3 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+              <div class="w-8 h-8 rounded flex items-center justify-center text-white" style="background-color: ${cat.color}">
+                ${renderIcon(cat.iconType, cat.iconData, 'w-4 h-4')}
+              </div>
+              <div class="flex items-center space-x-2">
+                <span class="text-sm font-medium text-slate-900">${cat.name}</span>
+                <span class="text-[10px] px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-500 rounded">系統專用</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
       return `
         <div data-cat-id="${cat.id}" class="p-3 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 cursor-pointer">
           <div class="flex items-center space-x-3">
             <div class="w-8 h-8 rounded flex items-center justify-center text-white" style="background-color: ${cat.color}">
               ${renderIcon(cat.iconType, cat.iconData, 'w-4 h-4')}
             </div>
-            <div class="flex items-center space-x-2">
-              <span class="text-sm font-medium text-slate-900">${cat.name}</span>
-              ${isSys ? '<span class="text-[10px] px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-500 rounded">系統內建</span>' : ''}
-            </div>
+            <span class="text-sm font-medium text-slate-900">${cat.name}</span>
           </div>
           <span class="text-slate-400 p-1">
             ${renderIcon('preset', 'pencil', 'w-4 h-4')}
@@ -116,7 +130,9 @@ export function renderSettingsView(container) {
   container.querySelectorAll('[data-cat-id]').forEach((row) => {
     row.addEventListener('click', () => {
       const target = store.categories.find((c) => c.id === row.dataset.catId);
-      if (target) renderCategoryModal(target, currentType);
+      if (target && !target.isSystem && target.id !== 'cat_sys_repayment') {
+        renderCategoryModal(target, currentType);
+      }
     });
   });
 

@@ -12,6 +12,7 @@ import { pushOverlay } from './pushOverlay.js';
 import { popOverlay } from './popOverlay.js';
 import { openSelectPicker } from './openSelectPicker.js';
 import { openDatePicker } from './openDatePicker.js';
+import { openConfirmModal } from './openConfirmModal.js';
 
 export function renderTransactionModal(editingTx = null) {
   const modalRoot = document.getElementById('modal-root');
@@ -24,7 +25,6 @@ export function renderTransactionModal(editingTx = null) {
   const accountTypeMap = new Map(ACCOUNT_TYPES.map((t) => [t.id, t.label]));
   const categoryMap = new Map(store.categories.map((c) => [c.id, c]));
 
-  // 計算目前所有代墊紀錄的待收餘額 (若正在編輯某筆還款，先排除該筆還款自身金額以便正確顯示原欠款)
   const txForReceivables = isEdit
     ? store.transactions.filter((t) => t.id !== editingTx.id)
     : store.transactions;
@@ -153,7 +153,6 @@ export function renderTransactionModal(editingTx = null) {
     const candidates = isRepayment ? getAdvanceExpenseCandidates() : [];
     const selectedTarget = candidates.find((c) => c.tx.id === formState.repayTargetId);
 
-    // 若目前正在檢視一筆「尚有欠款未收齊」的代墊支出，提供一鍵「記一筆還款」快捷鈕
     const currentEditAdvanceInfo = isEdit && editingTx ? advanceMap.get(editingTx.id) : null;
     const canQuickRepay = Boolean(
       isEdit &&
@@ -357,7 +356,7 @@ export function renderTransactionModal(editingTx = null) {
             <div class="pt-2 flex items-center space-x-2">
               ${
                 isEdit
-                  ? `<button id="btn-delete-tx" type="button" class="px-4 py-2.5 border border-rose-200 text-rose-600 text-sm font-semibold rounded-md">刪除</button>`
+                  ? `<button id="btn-delete-tx" type="button" class="px-4 py-2.5 border border-rose-200 text-rose-600 text-sm font-semibold rounded-md active:bg-rose-50">刪除</button>`
                   : ''
               }
               <button type="submit" class="flex-1 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-md active:bg-slate-700">
@@ -400,7 +399,6 @@ export function renderTransactionModal(editingTx = null) {
       closeModal();
     });
 
-    // 總金額與「屬於自己 / 他人代墊」雙向即時換算
     const amountEl = modalRoot.querySelector('#tx-amount');
     const myAmtEl = modalRoot.querySelector('#tx-my-amount');
     const otherAmtEl = modalRoot.querySelector('#tx-other-amount');
@@ -562,11 +560,26 @@ export function renderTransactionModal(editingTx = null) {
       });
     });
 
-    modalRoot.querySelector('#btn-delete-tx')?.addEventListener('click', async () => {
+    modalRoot.querySelector('#btn-delete-tx')?.addEventListener('click', () => {
       if (!editingTx) return;
-      await deleteRecord(STORES.TRANSACTIONS, editingTx.id);
-      closeModal();
-      await refreshData();
+      const title =
+        editingTx.name ||
+        categoryMap.get(editingTx.categoryId)?.name ||
+        (editingTx.type === 'transfer' ? '帳戶轉移' : '記帳紀錄');
+
+      openConfirmModal({
+        id: 'delete-tx-confirm',
+        title: '刪除記帳紀錄',
+        message: `確定要刪除「${title} (${formatCurrency(editingTx.amount)})」這筆紀錄嗎？刪除後無法復原。`,
+        confirmText: '確定刪除',
+        cancelText: '取消',
+        isDanger: true,
+        onConfirm: async () => {
+          await deleteRecord(STORES.TRANSACTIONS, editingTx.id);
+          closeModal();
+          await refreshData();
+        }
+      });
     });
 
     modalRoot.querySelector('#tx-form')?.addEventListener('submit', async (e) => {

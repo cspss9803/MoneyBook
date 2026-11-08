@@ -30,9 +30,14 @@
       color-scheme: dark;
     }
 
+    /* 停用手機瀏覽器下拉重新整理 (Pull-to-refresh) */
+    html, body {
+      overscroll-behavior-y: none;
+    }
+
     input[type="number"]::-webkit-inner-spin-button,
     input[type="number"]::-webkit-outer-spin-button {
-      -webkit-appearance: none;
+      appearance: none;
       margin: 0;
     }
     input[type="number"] {
@@ -88,7 +93,7 @@
       to { transform: rotate(360deg); }
     }
 
-    /* 全域深色模式語意映射 (無漸層、無發光、純粹高對比暗色) */
+    /* 全域深色模式語意映射 */
     html.dark body,
     html.dark .bg-slate-100 {
       background-color: #020617 !important;
@@ -147,7 +152,6 @@
     html.dark .active\:bg-slate-100:active {
       background-color: #1e293b !important;
     }
-    /* 深色模式語意色彩微調，提升暗底閱讀舒適度 */
     html.dark .text-rose-600 { color: #fb7185 !important; }
     html.dark .text-emerald-600, html.dark .text-emerald-700 { color: #34d399 !important; }
     html.dark .text-amber-700, html.dark .text-amber-800 { color: #fbbf24 !important; }

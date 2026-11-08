@@ -1,4 +1,4 @@
-import { pushOverlay } from './pushOverlay.js';
+import { store } from '../state/store.js';
 import { popOverlay } from './popOverlay.js';
 
 export function openConfirmModal({
@@ -8,7 +8,9 @@ export function openConfirmModal({
   confirmText = '確定',
   cancelText = '取消',
   isDanger = false,
-  onConfirm = null
+  lockBack = false,
+  onConfirm = null,
+  onCancel = null
 }) {
   const existing = document.getElementById('confirm-modal-layer');
   if (existing) existing.remove();
@@ -39,17 +41,27 @@ export function openConfirmModal({
   document.body.appendChild(layer);
 
   function closeConfirm() {
-    popOverlay(id);
     layer.remove();
+    popOverlay(id);
   }
 
-  pushOverlay(id, closeConfirm);
+  if (!Array.isArray(store.overlayStack)) {
+    store.overlayStack = [];
+  }
+  store.overlayStack = store.overlayStack.filter((item) => item.id !== id);
+  store.overlayStack.push({ id, closeFn: closeConfirm, locked: Boolean(lockBack) });
 
   layer.addEventListener('click', (e) => {
-    if (e.target === layer) closeConfirm();
+    if (e.target === layer && !lockBack) {
+      closeConfirm();
+      if (typeof onCancel === 'function') onCancel();
+    }
   });
 
-  layer.querySelector('#btn-confirm-cancel')?.addEventListener('click', closeConfirm);
+  layer.querySelector('#btn-confirm-cancel')?.addEventListener('click', () => {
+    closeConfirm();
+    if (typeof onCancel === 'function') onCancel();
+  });
 
   layer.querySelector('#btn-confirm-ok')?.addEventListener('click', async () => {
     closeConfirm();
