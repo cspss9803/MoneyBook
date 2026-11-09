@@ -15,7 +15,7 @@ export function renderSettingsView(container) {
 
   const categoryRowsHtml = filteredCategories
     .map((cat) => {
-      const isSys = Boolean(cat.isSystem || cat.id === 'cat_sys_repayment');
+      const isSys = Boolean(cat.isSystem || cat.id?.startsWith('cat_sys_'));
 
       if (isSys) {
         return `
@@ -130,7 +130,7 @@ export function renderSettingsView(container) {
   container.querySelectorAll('[data-cat-id]').forEach((row) => {
     row.addEventListener('click', () => {
       const target = store.categories.find((c) => c.id === row.dataset.catId);
-      if (target && !target.isSystem && target.id !== 'cat_sys_repayment') {
+      if (target && !target.isSystem && !target.id?.startsWith('cat_sys_')) {
         renderCategoryModal(target, currentType);
       }
     });

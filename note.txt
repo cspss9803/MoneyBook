@@ -1,0 +1,2 @@
+# 編譯 Tailwind css
+npx tailwindcss@3 -o ./style.css --content "./index.html,./ui/**/*.js" --minify
