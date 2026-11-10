@@ -1,53 +1,42 @@
-function getStartDateStr(daysAgo = 15) {
-  const d = new Date();
-  d.setDate(d.getDate() - daysAgo);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
+const GAS_API_URL =
+  'https://script.google.com/macros/s/AKfycbxLKvKKFGfygVnDt5jTG4dWcK1OfLvKXtzxARmLb9izno0wR9mNxiK-mb8Al3d-vWrQ5w/exec';
 
-export async function fetchStockPrice(rawSymbol) {
-  // 移除可能殘留的 .TW 或 .TWO 後綴，FinMind 統一使用純代號 (如 1712、0050、00937B)
-  const cleanSymbol = String(rawSymbol || '')
-    .trim()
-    .toUpperCase()
-    .replace(/\.TWO?$/, '');
+export async function fetchStockPrices(symbols) {
+  if (!Array.isArray(symbols) || symbols.length === 0) return [];
 
-  if (!cleanSymbol) return null;
+  // 清洗代號並轉為大寫、去除後綴
+  const cleanSymbols = symbols
+    .map((s) => String(s || '').trim().toUpperCase().replace(/\.TWO?$/, ''))
+    .filter(Boolean);
 
-  const startDate = getStartDateStr(15);
-  const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(cleanSymbol)}&start_date=${startDate}`;
+  if (cleanSymbols.length === 0) return [];
+
+  const reqUrl = `${GAS_API_URL}?symbols=${encodeURIComponent(cleanSymbols.join(','))}&_=${Date.now()}`;
 
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
+    const timer = setTimeout(() => controller.abort(), 15000);
 
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(reqUrl, {
+      redirect: 'follow',
+      signal: controller.signal
+    });
     clearTimeout(timer);
 
-    if (!res.ok) return null;
+    if (!res.ok) return [];
 
     const json = await res.json();
-    if (json.msg !== 'success' || !Array.isArray(json.data) || json.data.length === 0) {
-      return null;
-    }
-
-    // 從最後一筆往前找最近一個有效收盤價
-    for (let i = json.data.length - 1; i >= 0; i--) {
-      const row = json.data[i];
-      const closePrice = Number(row.close);
-      if (row.close !== null && row.close !== undefined && !Number.isNaN(closePrice) && closePrice > 0) {
-        return {
-          symbol: cleanSymbol,
-          price: Math.round(closePrice * 100) / 100,
-          tradeDate: row.date
-        };
-      }
+    // 預期 GAS 回傳格式：{ results: [ { symbol, price, tradeDate }, ... ] }
+    if (json && Array.isArray(json.results)) {
+      return json.results.map((r) => ({
+        symbol: r.symbol,
+        price: Math.round(Number(r.price) * 100) / 100,
+        tradeDate: r.tradeDate
+      })).filter((r) => !Number.isNaN(r.price) && r.price > 0);
     }
   } catch (err) {
-    console.warn(`查詢 ${cleanSymbol} 收盤價失敗:`, err);
+    console.warn('批次查詢股票收盤價失敗:', err);
   }
 
-  return null;
+  return [];
 }
