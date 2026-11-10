@@ -11,15 +11,13 @@ export async function initDB() {
       await addRecord(STORES.CATEGORIES, category);
     }
   } else {
+    // 強制同步系統專用類別的最新顏色與圖示設定
     for (const sysCat of SYSTEM_CATEGORIES) {
-      const exists = categories.some((c) => c.id === sysCat.id);
-      if (!exists) {
-        await updateRecord(STORES.CATEGORIES, sysCat);
-      }
+      await updateRecord(STORES.CATEGORIES, sysCat);
     }
   }
 
-  // 自動將先前已建立的股票交割明細升級為對應的系統專用類別
+  // 自動將股票交割明細對應為系統專用類別
   const transactions = await getAllRecords(STORES.TRANSACTIONS);
   for (const tx of transactions) {
     if (!tx.id.startsWith('tx_st_')) continue;

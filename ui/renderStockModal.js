@@ -451,9 +451,7 @@ export function renderStockModal(stockAccount) {
       if (uiState.isSyncing) return;
       uiState.isSyncing = true;
       renderContent();
-      for (const h of portfolio.holdings) {
-        await syncDailyStockPrices(h.symbol);
-      }
+      await syncDailyStockPrices(true);
       uiState.isSyncing = false;
       renderContent();
     });

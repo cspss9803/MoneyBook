@@ -1,5 +1,5 @@
 const GAS_API_URL =
-  'https://script.google.com/macros/s/AKfycbxLKvKKFGfygVnDt5jTG4dWcK1OfLvKXtzxARmLb9izno0wR9mNxiK-mb8Al3d-vWrQ5w/exec';
+  'https://script.google.com/macros/s/AKfycbwJROQshNiOIhVj4_JjcAzUuIMTsp8KdaDmdWYUgXo7b_r3Kyjh5iDRbvthBOWWjDhtRw/exec';
 
 export async function fetchStockPrices(symbols) {
   if (!Array.isArray(symbols) || symbols.length === 0) return [];

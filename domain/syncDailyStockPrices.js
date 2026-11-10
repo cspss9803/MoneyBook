@@ -30,15 +30,17 @@ function getTargetCloseDateStr() {
   return `${y}-${m}-${d}`;
 }
 
-export async function syncDailyStockPrices(forceSymbol = null) {
+export async function syncDailyStockPrices(forceOption = null) {
   const targetCloseDate = getTargetCloseDateStr();
   const priceMap = new Map(store.stockPrices.map((p) => [p.symbol, p]));
 
   const symbolsToCheck = [];
 
-  if (forceSymbol) {
-    symbolsToCheck.push(String(forceSymbol).trim().toUpperCase());
+  if (typeof forceOption === 'string' && forceOption.trim()) {
+    // 指定強制更新單一股票代號
+    symbolsToCheck.push(forceOption.trim().toUpperCase());
   } else {
+    const forceAll = forceOption === true;
     const heldSharesMap = new Map();
     for (const trade of store.stockTrades) {
       const sym = trade.symbol;
@@ -48,8 +50,12 @@ export async function syncDailyStockPrices(forceSymbol = null) {
     for (const [sym, shares] of heldSharesMap.entries()) {
       if (shares > 0) {
         const cached = priceMap.get(sym);
-        // 若快取已透過 GAS 查過目標收盤日，則跳過不重複查
-        if (cached && cached.provider === 'gas' && cached.checkedForDate >= targetCloseDate) {
+        if (
+          !forceAll &&
+          cached &&
+          cached.provider === 'gas' &&
+          cached.checkedForDate >= targetCloseDate
+        ) {
           continue;
         }
         symbolsToCheck.push(sym);
@@ -59,7 +65,7 @@ export async function syncDailyStockPrices(forceSymbol = null) {
 
   if (symbolsToCheck.length === 0) return;
 
-  // 一次性發送批次請求
+  // 一次性批次查詢所有需要更新的股票
   const results = await fetchStockPrices(symbolsToCheck);
   let updatedAny = false;
 
