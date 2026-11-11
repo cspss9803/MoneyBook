@@ -1,6 +1,7 @@
+<!-- src/components/views/transaction/TransactionRow.vue -->
 <template>
   <div class="p-3 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 cursor-pointer">
-    <!-- 這一行與內層文字區塊補上 flex-1 -->
+    <!-- 這裡補上 flex-1 -->
     <div class="flex items-center space-x-3 min-w-0 flex-1">
       <div
         class="w-9 h-9 rounded-md flex items-center justify-center shrink-0"
@@ -9,6 +10,7 @@
       >
         <AppIcon :name="tx.type === 'transfer' ? 'arrowRight' : (cat?.iconData || 'tag')" :className="tx.type === 'transfer' ? 'w-4 h-4' : 'w-5 h-5'" />
       </div>
+      <!-- 這裡也補上 flex-1 確保文字區塊正常伸展與截斷 -->
       <div class="min-w-0 flex-1">
         <div class="flex items-center flex-wrap gap-1">
           <span class="text-sm font-medium text-slate-900 truncate">{{ title }}</span>
