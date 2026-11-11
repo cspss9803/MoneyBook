@@ -13,7 +13,7 @@ const variantMap = {
 </script>
 
 <template>
-  <span :class="['text-[10px] px-1.5 py-0.5 border rounded max-w-full truncate', variantMap[props.variant] || variantMap.neutral]">
+  <span :class="['inline-block text-[10px] px-1.5 py-0.5 border rounded max-w-full truncate', variantMap[props.variant] || variantMap.neutral]">
     <slot />
   </span>
 </template>

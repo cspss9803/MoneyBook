@@ -1,7 +1,36 @@
-<!-- src/components/views/transaction/TransactionRow.vue -->
+<script setup>
+import { computed } from 'vue';
+import { useLedgerStore } from '../../../stores/useLedgerStore.js';
+import { formatCurrency } from '../../../domain/formatCurrency.js';
+import AppIcon from '../../common/AppIcon.vue';
+import TransactionBadges from './TransactionBadges.vue';
+
+const props = defineProps({
+  tx: { type: Object, required: true },
+  todayStr: { type: String, required: true },
+  advInfo: { type: Object, default: null },
+  overflowAmt: { type: Number, default: 0 },
+  repayTargetName: { type: String, default: '' }
+});
+
+const ledgerStore = useLedgerStore();
+const cat = computed(() => ledgerStore.categoryMap.get(props.tx.categoryId));
+const fromName = computed(() => ledgerStore.accountMap.get(props.tx.accountId)?.name || '未知帳戶');
+const toAcc = computed(() => ledgerStore.accountMap.get(props.tx.toAccountId));
+
+const title = computed(() => {
+  if (props.tx.type === 'transfer') return props.tx.name || (toAcc.value?.type === 'credit' ? '信用卡還款' : '帳戶轉移');
+  return props.tx.name || cat.value?.name || '未分類';
+});
+
+const subtitle = computed(() => {
+  const base = props.tx.type === 'transfer' ? `${fromName.value} ➔ ${toAcc.value?.name || '未知帳戶'}` : `${cat.value?.name || '未分類'} · ${fromName.value}`;
+  return props.tx.note ? `${base} · ${props.tx.note}` : base;
+});
+</script>
+
 <template>
-  <div class="p-3 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 cursor-pointer">
-    <!-- 這裡補上 flex-1 -->
+  <div class="p-3 flex items-center justify-between gap-2 hover:bg-slate-50 active:bg-slate-100 cursor-pointer">
     <div class="flex items-center space-x-3 min-w-0 flex-1">
       <div
         class="w-9 h-9 rounded-md flex items-center justify-center shrink-0"
@@ -10,10 +39,9 @@
       >
         <AppIcon :name="tx.type === 'transfer' ? 'arrowRight' : (cat?.iconData || 'tag')" :className="tx.type === 'transfer' ? 'w-4 h-4' : 'w-5 h-5'" />
       </div>
-      <!-- 這裡也補上 flex-1 確保文字區塊正常伸展與截斷 -->
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center flex-wrap gap-1">
-          <span class="text-sm font-medium text-slate-900 truncate">{{ title }}</span>
+      <div class="min-w-0 flex-1 overflow-hidden">
+        <div class="flex items-center flex-wrap gap-1 min-w-0">
+          <span class="text-sm font-medium text-slate-900 truncate max-w-full">{{ title }}</span>
           <TransactionBadges :tx="tx" :isFuture="tx.date > todayStr" :advInfo="advInfo" :overflowAmt="overflowAmt" :repayTargetName="repayTargetName" />
         </div>
         <div class="text-xs text-slate-500 truncate">{{ subtitle }}</div>
